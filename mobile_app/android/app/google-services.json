@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "332010806988",
+    "project_id": "sgau-attendance",
+    "storage_bucket": "sgau-attendance.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:332010806988:android:080e2cb0da7bc970b7ec69",
+        "android_client_info": {
+          "package_name": "com.example.sgau_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkeRhRwOhCt8AjUgzkadOeO870vGYJAHs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

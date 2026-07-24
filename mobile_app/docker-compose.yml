@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sgau_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: sgau_db
+    ports:
+      - "3306:3306"
+    volumes:
+      - sgau_mysql_data:/var/lib/mysql
+
+volumes:
+  sgau_mysql_data:

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Custom native splash screen for SGAU brand styling -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Brand primary background color -->
+    <item android:drawable="@color/ic_launcher_background" />
+
+    <!-- Polished App logo icon centered on splash launch -->
+    <item
+        android:drawable="@drawable/ic_launcher_foreground"
+        android:gravity="center" />
+</layer-list>

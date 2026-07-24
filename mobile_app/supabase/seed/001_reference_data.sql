@@ -1,0 +1,36 @@
+-- SGAU Seed - Données de référence
+
+-- Groupes
+INSERT INTO public.groups (id, name, "studentCount", "isActive") VALUES
+  ('a1000000-0000-0000-0000-000000000001', 'Master 1 - GL', 25, true),
+  ('a1000000-0000-0000-0000-000000000002', 'Master 1 - SI', 20, true),
+  ('a1000000-0000-0000-0000-000000000003', 'Master 2 - GL', 18, true)
+ON CONFLICT DO NOTHING;
+
+-- Modules
+INSERT INTO public.modules (id, name, description, "isActive") VALUES
+  ('b2000000-0000-0000-0000-000000000001', 'Génie Logiciel Avancé', 'Conception et architecture logicielle', true),
+  ('b2000000-0000-0000-0000-000000000002', 'Systèmes Distribués', 'Middleware, RPC, transactions réparties', true),
+  ('b2000000-0000-0000-0000-000000000003', 'Intelligence Artificielle', 'Apprentissage automatique et Deep Learning', true),
+  ('b2000000-0000-0000-0000-000000000004', 'Bases de Données Avancées', 'NoSQL, optimisation, data mining', true)
+ON CONFLICT DO NOTHING;
+
+-- Association modules ↔ groupes
+INSERT INTO public.module_groups ("moduleId", "groupId") VALUES
+  ('b2000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000001'),
+  ('b2000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000003'),
+  ('b2000000-0000-0000-0000-000000000002', 'a1000000-0000-0000-0000-000000000001'),
+  ('b2000000-0000-0000-0000-000000000002', 'a1000000-0000-0000-0000-000000000002'),
+  ('b2000000-0000-0000-0000-000000000003', 'a1000000-0000-0000-0000-000000000002'),
+  ('b2000000-0000-0000-0000-000000000003', 'a1000000-0000-0000-0000-000000000003'),
+  ('b2000000-0000-0000-0000-000000000004', 'a1000000-0000-0000-0000-000000000001'),
+  ('b2000000-0000-0000-0000-000000000004', 'a1000000-0000-0000-0000-000000000002')
+ON CONFLICT DO NOTHING;
+
+-- Salles
+INSERT INTO public.rooms (id, name, capacity, "isActive") VALUES
+  ('c3000000-0000-0000-0000-000000000001', 'Amphithéâtre A', 100, true),
+  ('c3000000-0000-0000-0000-000000000002', 'Amphithéâtre B', 80, true),
+  ('c3000000-0000-0000-0000-000000000003', 'Salle TP 101', 30, true),
+  ('c3000000-0000-0000-0000-000000000004', 'Salle TP 102', 30, true)
+ON CONFLICT DO NOTHING;

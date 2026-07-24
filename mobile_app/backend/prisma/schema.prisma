@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PROFESSOR
+  STUDENT
+}
+
+enum SessionStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  UNMARKED
+  PRESENT
+  ABSENT
+  LATE
+  JUSTIFIED
+}
+
+enum MarkedBy {
+  PROFESSOR
+  STUDENT
+  ADMIN
+  SYSTEM
+}
+
+enum ScanMethod {
+  MANUAL
+  QR
+  QR_SESSION
+  QR_STUDENT
+  IMPORT
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String        @map("password_hash")
+  firstName    String
+  lastName     String
+  role         UserRole
+  identifier   String?
+  groupId      String?
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  group             Group?        @relation(fields: [groupId], references: [id])
+  sessionsAsProfessor Session[]   @relation("ProfessorSessions")
+  attendance        Attendance[]
+  refreshTokens     RefreshToken[]
+
+  @@index([role])
+}
+
+model Group {
+  id           String    @id @default(cuid())
+  name         String
+  code         String
+  level        String
+  department   String
+  studentCount Int       @default(0)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  students User[]
+  sessions Session[]
+}
+
+model Module {
+  id         String   @id @default(cuid())
+  name       String
+  code       String
+  description String?
+  credits    Int?
+  totalHours Int?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Room {
+  id             String   @id @default(cuid())
+  name           String
+  code           String
+  capacity       Int
+  building       String?
+  floor          Int?
+  hasProjector   Boolean  @default(false)
+  hasComputers   Boolean  @default(false)
+  latitude       Float?
+  longitude      Float?
+  geofenceRadius Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Session {
+  id              String        @id @default(cuid())
+  moduleId        String
+  professorId     String
+  groupId         String
+  roomId          String
+  sessionDate     DateTime
+  startTime       String
+  endTime         String
+  status          SessionStatus @default(SCHEDULED)
+  currentQrToken  String?
+  qrTokenExpiresAt DateTime?
+  presentCount    Int           @default(0)
+  absentCount     Int           @default(0)
+  lateCount       Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  module    Module   @relation(fields: [moduleId], references: [id])
+  professor User     @relation("ProfessorSessions", fields: [professorId], references: [id])
+  group     Group    @relation(fields: [groupId], references: [id])
+  room      Room     @relation(fields: [roomId], references: [id])
+  attendance Attendance[]
+
+  @@index([sessionDate])
+  @@index([professorId])
+  @@index([groupId])
+}
+
+model Attendance {
+  sessionId   String
+  studentId   String
+  status      AttendanceStatus @default(UNMARKED)
+  markedBy    MarkedBy          @default(PROFESSOR)
+  scanMethod  ScanMethod        @default(MANUAL)
+  gpsVerified Boolean           @default(false)
+  gpsLatitude Float?
+  gpsLongitude Float?
+  lateMinutes Int?
+  markedAt    DateTime          @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id])
+  student User    @relation(fields: [studentId], references: [id])
+
+  @@id([sessionId, studentId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
