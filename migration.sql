@@ -74,23 +74,11 @@ create table if not exists professor_groups (
   primary key (professorid, groupid)
 );
 
--- Emploi du temps hebdomadaire par semaine (une ligne par créneau modifié)
--- Héritage automatique : pour chaque (groupid, dayofweek, starttime), la ligne avec le week_start
--- le plus élevé ≤ semaine courante définit le créneau effectif.
-create table if not exists weekly_entries (
-  id uuid primary key,
-  groupid uuid not null references groups(id) on delete cascade,
-  week_start date not null,
-  dayofweek int not null check (dayofweek between 0 and 6),
-  starttime time not null,
-  endtime time not null,
-  professorid uuid references users(id) on delete set null,
-  roomid uuid references rooms(id) on delete set null
-);
-
-create index if not exists idx_weekly_entries_group on weekly_entries(groupid);
-create index if not exists idx_weekly_entries_week on weekly_entries(week_start);
-create index if not exists idx_weekly_entries_professor on weekly_entries(professorid);
+-- NOTE (DÉPRÉCIÉ) : l'emploi du temps est désormais géré par le modèle « séries
+-- récurrentes » (session_masters / session_exceptions), cf. migration_session_masters.sql.
+-- La table weekly_entries et ses RPCs (insert_entry_atomic, delete_cascade, publish_week)
+-- sont conservées uniquement comme historique et pour l'import de données existantes
+-- (migration_session_masters_import.sql). Pour les bases neuves, NE PAS créer weekly_entries.
 
 -- Emploi du temps hebdomadaire (template)
 create table if not exists weekly_schedule (
@@ -322,7 +310,6 @@ alter table groups enable row level security;
 alter table enrollments enable row level security;
 alter table rooms enable row level security;
 alter table time_slots enable row level security;
-alter table weekly_entries enable row level security;
 alter table weekly_schedule enable row level security;
 alter table sessions enable row level security;
 alter table attendance enable row level security;
@@ -384,21 +371,8 @@ create policy "Admins full access" on professor_groups
 create policy "Professors read groups" on professor_groups
   for select using (user_role() = 'professor');
 
-create policy "Admins full access" on weekly_entries
-  for all using (user_role() = 'admin');
-
-create policy "Professors read weekly_entries" on weekly_entries
-  for select using (user_role() = 'professor');
-
-create policy "Students read weekly_entries" on weekly_entries
-  for select using (
-    exists (
-      select 1 from enrollments
-      where enrollments.studentid = auth.uid()
-      and enrollments.groupid = weekly_entries.groupid
-    )
-  );
-
+-- NOTE (DÉPRÉCIÉ) : politiques weekly_entries supprimées (modèle remplacé par
+-- session_masters / session_exceptions, voir migration_session_masters.sql).
 create policy "Admins full access" on session_overrides
   for all using (user_role() = 'admin');
 
@@ -515,3 +489,94 @@ insert into modules (id, name, domainid, isactive)
   select gen_random_uuid(), 'Mathématiques', id, true from domains where name = 'Soutien scolaire';
 insert into modules (id, name, domainid, isactive)
   select gen_random_uuid(), 'Physique-Chimie', id, true from domains where name = 'Soutien scolaire';
+
+
+-- ============================================================
+-- MIGRATION : Système de statuts, audit, absences, vacances
+-- ============================================================
+
+-- 1. (DÉPRÉCIÉ) champs status/replaced_by/replaces : appartenaient au modèle weekly_entries,
+--    remplacé par session_masters / session_exceptions (migration_session_masters.sql).
+
+-- 2. Table d'audit
+CREATE TABLE IF NOT EXISTS audit_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type text NOT NULL,
+  entity_id uuid NOT NULL,
+  action text NOT NULL CHECK (action IN ('create', 'update', 'delete', 'cancel', 'restore', 'publish')),
+  user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  user_name text,
+  before_data jsonb,
+  after_data jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log (user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_date ON audit_log (created_at DESC);
+
+-- 3. Table des absences formateurs
+CREATE TABLE IF NOT EXISTS professor_absences (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  professorid uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date_start date NOT NULL,
+  date_end date NOT NULL,
+  reason text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  replacement_professorid uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prof_absences_prof ON professor_absences (professorid);
+CREATE INDEX IF NOT EXISTS idx_prof_absences_dates ON professor_absences (date_start, date_end);
+
+-- 4. Table des jours fériés / vacances
+CREATE TABLE IF NOT EXISTS holidays (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  date_start date NOT NULL,
+  date_end date NOT NULL,
+  type text NOT NULL DEFAULT 'holiday' CHECK (type IN ('holiday', 'vacation', 'bridge', 'event')),
+  isactive boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_holidays_dates ON holidays (date_start, date_end);
+
+-- 5. RLS pour les nouvelles tables
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE professor_absences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE holidays ENABLE ROW LEVEL SECURITY;
+
+-- Audit log : admin peut tout voir, autres users ne voient que leurs propres entrées
+CREATE POLICY "audit_admin_all" ON audit_log FOR ALL USING (
+  EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin')
+);
+CREATE POLICY "audit_user_read" ON audit_log FOR SELECT USING (
+  user_id = auth.uid()
+);
+
+-- Professor absences : admin CRUD, prof peut voir les siennes
+CREATE POLICY "absences_admin_all" ON professor_absences FOR ALL USING (
+  EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin')
+);
+CREATE POLICY "absences_prof_read" ON professor_absences FOR SELECT USING (
+  professorid = auth.uid()
+);
+
+-- Holidays : tout le monde peut lire, admin peut modifier
+CREATE POLICY "holidays_read" ON holidays FOR SELECT USING (true);
+CREATE POLICY "holidays_admin_all" ON holidays FOR ALL USING (
+  EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role = 'admin')
+);
+
+
+-- ============================================================
+-- RPCs (DÉPRÉCIÉ)
+-- ============================================================
+-- Les RPCs insert_entry_atomic / delete_cascade / publish_week opéraient sur le modèle
+-- weekly_entries, remplacé par les séries récurrentes (session_masters / session_exceptions).
+-- Les nouvelles RPCs (create_series, edit_occurrence, delete_occurrence, edit_series_from_date,
+-- delete_series_from_date, archive_series, project_week) sont définies dans
+-- migration_session_masters.sql. Le nettoyage de ces objets en base existante est fourni par
+-- migration_session_masters_cleanup.sql.

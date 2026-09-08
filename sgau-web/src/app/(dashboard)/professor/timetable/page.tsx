@@ -9,13 +9,16 @@ import {
 } from "@/components/ui/dialog";
 import { useRouter } from "next/navigation";
 import {
-  Clock, MapPin, Users, ChevronLeft, ChevronRight, Loader2, CalendarDays,
+  Clock, MapPin, Users, ChevronLeft, ChevronRight, Loader2,
   PenLine, XCircle, ExternalLink, Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getWeekStart, getWeekEnd, getEffectiveForWeek } from "@/lib/week";
+import { getWeekStart, getWeekEnd, projectWeek, normalizeTime, toLocalDateStr } from "@/lib/session-masters";
+import type { SessionOccurrence } from "@/lib/session-masters";
 import { uuid } from "@/lib/uuid";
-import type { WeeklyEntry } from "@/types/database";
+import { Mascot } from "@/components/mascot/Mascot";
+import { EmptyState, LoadingState } from "@/components/mascot/EmptyState";
+import { useMascot } from "@/components/mascot/MascotProvider";
 
 const DAYS = [
   { value: 0, label: "Dimanche" }, { value: 1, label: "Lundi" },
@@ -28,7 +31,7 @@ type DayItem = {
   id: string; starttime: string; endtime: string;
   moduleName: string; groupName: string; roomName: string;
   status?: string; sessiondate: string; dayofweek: number;
-  type: "session" | "schedule"; groupid: string; scheduleId?: string;
+  type: "session" | "schedule"; groupid: string; roomid: string; professorid: string;
 };
 
 function isTimePast(date: string, time: string) {
@@ -39,85 +42,56 @@ function isTimePast(date: string, time: string) {
 }
 
 export default function ProfessorTimetablePage() {
-  const [entries, setEntries] = useState<WeeklyEntry[]>([]);
+  const [occurrences, setOccurrences] = useState<SessionOccurrence[]>([]);
   const [sessions, setSessions] = useState<Record<string, unknown>[]>([]);
   const [timeSlots, setTimeSlots] = useState<{ id: string; label: string; starttime: string; endtime: string; orderindex: number }[]>([]);
-  const [roomMap, setRoomMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [groupIds, setGroupIds] = useState<string[]>([]);
-  const [groupMap, setGroupMap] = useState<Record<string, { name: string; moduleName: string }>>({});
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
-  const [userId, setUserId] = useState<string>("");
   const [actionTarget, setActionTarget] = useState<DayItem | null>(null);
   const [actionInProgress, setActionInProgress] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const supabase = createClient();
   const router = useRouter();
+  const mascot = useMascot();
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
-    setUserId(user.id);
 
-    const [linksRes, slotsRes, roomsRes] = await Promise.all([
+    const [linksRes, slotsRes] = await Promise.all([
       supabase.from("professor_groups").select("groupid").eq("professorid", user.id),
       supabase.from("time_slots").select("*").order("orderindex"),
-      supabase.from("rooms").select("id, name").eq("isactive", true),
     ]);
 
     if (slotsRes.data) setTimeSlots(slotsRes.data as typeof timeSlots);
-    if (roomsRes.data) {
-      const map: Record<string, string> = {};
-      for (const r of roomsRes.data as Record<string, unknown>[]) map[r.id as string] = r.name as string;
-      setRoomMap(map);
-    }
 
     const gids = (linksRes.data ?? []).map((r: Record<string, unknown>) => r.groupid as string);
     setGroupIds(gids);
 
-    if (gids.length > 0) {
-      const [entriesRes, groupsRes] = await Promise.all([
-        supabase.from("weekly_entries").select("*").in("groupid", gids),
-        supabase.from("groups").select("id, name, modules(name)").in("id", gids),
-      ]);
-
-      if (entriesRes.data) setEntries(entriesRes.data as WeeklyEntry[]);
-
-      if (groupsRes.data) {
-        const map: Record<string, { name: string; moduleName: string }> = {};
-        for (const g of groupsRes.data as Record<string, unknown>[]) {
-          const mod = g.modules as Record<string, unknown> | null;
-          map[g.id as string] = {
-            name: g.name as string,
-            moduleName: mod?.name as string ?? "",
-          };
-        }
-        setGroupMap(map);
-      }
-    }
-
     setLoading(false);
-  }, []);
+  }, [supabase]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (!active) return;
+      await load();
+    })();
+    return () => {
+      active = false;
+    };
+  }, [load]);
 
-  const effectiveEntries = useMemo(() => {
-    if (!userId || groupIds.length === 0) return [];
-    const result: (WeeklyEntry & { groupName?: string; moduleName?: string })[] = [];
-    for (const gid of groupIds) {
-      const eff = getEffectiveForWeek(entries, gid, weekStart);
-      const g = groupMap[gid];
-      for (const e of eff) {
-        if (e.professorid !== userId) continue;
-        result.push({
-          ...e,
-          groupName: g?.name ?? "",
-          moduleName: g?.moduleName ?? "",
-        });
-      }
-    }
-    return result;
-  }, [entries, groupIds, weekStart, groupMap, userId]);
+  useEffect(() => {
+    const loadOccurrences = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const res = await projectWeek(supabase, weekStart, null);
+      if (res.ok) setOccurrences(res.data);
+    };
+    loadOccurrences();
+  }, [weekStart, supabase]);
 
   useEffect(() => {
     const loadSessions = async () => {
@@ -138,7 +112,7 @@ export default function ProfessorTimetablePage() {
       if (sessData) setSessions(sessData as Record<string, unknown>[]);
     };
     loadSessions();
-  }, [weekStart, groupIds]);
+  }, [weekStart, groupIds, supabase]);
 
   const shiftWeek = (dir: number) => {
     const d = new Date(weekStart + "T00:00:00");
@@ -160,7 +134,7 @@ export default function ProfessorTimetablePage() {
       const targetDow = day.value === 0 ? 0 : day.value;
       const diff = targetDow - d.getDay();
       d.setDate(d.getDate() + diff);
-      return d.toISOString().slice(0, 10);
+      return toLocalDateStr(d);
     }),
     [weekStart],
   );
@@ -169,49 +143,47 @@ export default function ProfessorTimetablePage() {
     const sessionByDayTime: Record<string, Record<string, Record<string, unknown>>> = {};
     for (const s of sessions) {
       const d = s.sessiondate as string;
-      const t = s.starttime as string;
+      const t = normalizeTime(s.starttime as string);
       if (!sessionByDayTime[d]) sessionByDayTime[d] = {};
       sessionByDayTime[d][t] = s;
     }
 
     const allStartTimes = [...new Set([
-      ...effectiveEntries.map((e) => e.starttime),
-      ...sessions.map((s) => s.starttime as string),
+      ...occurrences.map((o) => normalizeTime(o.startTime)),
+      ...sessions.map((s) => normalizeTime(s.starttime as string)),
     ])].sort();
 
-    const timeSlotMap = Object.fromEntries(timeSlots.map((ts) => [ts.starttime, ts]));
+    const timeSlotMap = Object.fromEntries(timeSlots.map((ts) => [normalizeTime(ts.starttime), ts]));
 
     const dayItemsByDay: Record<number, DayItem[]> = {};
     for (const day of DAYS) {
       const dateStr = weekDates[DAYS.indexOf(day)];
       const daySessions = sessions.filter((s) => s.sessiondate === dateStr);
-      const hasSessionAt = (t: string) => daySessions.some((s) => s.starttime === t);
-      const unmatched = effectiveEntries
-        .filter((e) => e.dayofweek === day.value && !hasSessionAt(e.starttime))
-        .map((e) => {
-          const m = groupMap[e.groupid];
-          return {
-            id: `sched-${e.id}`, starttime: e.starttime, endtime: e.endtime,
-            moduleName: m?.moduleName ?? "", groupName: m?.name ?? "",
-            roomName: roomMap[e.roomid] ?? "", status: undefined, sessiondate: dateStr,
-            dayofweek: day.value, type: "schedule" as const, groupid: e.groupid,
-            scheduleId: e.id,
-          };
-        });
+      const hasSessionAt = (t: string) => daySessions.some((s) => normalizeTime(s.starttime as string) === normalizeTime(t));
+      const unmatched = occurrences
+        .filter((o) => o.occurrenceDate === dateStr && !hasSessionAt(o.startTime))
+        .map((o) => ({
+          id: `sched-${o.id}`, starttime: normalizeTime(o.startTime), endtime: normalizeTime(o.endTime),
+          moduleName: o.moduleName, groupName: o.groupName,
+          roomName: o.roomName, status: undefined, sessiondate: o.occurrenceDate,
+          dayofweek: new Date(o.occurrenceDate + "T00:00:00").getDay(),
+          type: "schedule" as const, groupid: o.groupId, roomid: o.roomId, professorid: o.professorId,
+        }));
       dayItemsByDay[day.value] = [
         ...daySessions.map((s) => {
           const mod = s.modules as Record<string, unknown> | null;
           const g = s.groups as Record<string, unknown> | null;
           const r = s.rooms as Record<string, unknown> | null;
           return {
-            id: s.id as string, starttime: s.starttime as string,
-            endtime: s.endtime as string,
+            id: s.id as string, starttime: normalizeTime(s.starttime as string),
+            endtime: normalizeTime(s.endtime as string),
             moduleName: mod?.name as string ?? "",
             groupName: g?.name as string ?? "",
             roomName: r?.name as string ?? "",
             status: s.status as string, sessiondate: s.sessiondate as string,
             dayofweek: day.value, type: "session" as const,
-            groupid: s.groupid as string,
+            groupid: s.groupid as string, roomid: (s.roomid as string) ?? "",
+            professorid: (s.professorid as string) ?? "",
           };
         }),
         ...unmatched,
@@ -219,14 +191,14 @@ export default function ProfessorTimetablePage() {
     }
 
     return { allStartTimes, timeSlotMap, dayItemsByDay };
-  }, [effectiveEntries, sessions, timeSlots, weekDates, groupMap, roomMap]);
+  }, [occurrences, sessions, timeSlots, weekDates]);
 
   const handleItemClick = (item: DayItem) => {
     if (item.type === "session" && item.id) {
       router.push(`/professor/sessions/${item.id}`);
       return;
     }
-    if (item.type === "schedule" && item.scheduleId) {
+    if (item.type === "schedule") {
       setActionTarget(item);
       setDialogOpen(true);
     }
@@ -238,34 +210,31 @@ export default function ProfessorTimetablePage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error("Non connecté"); return; }
 
-      const entry = entries.find((e) => e.id === item.scheduleId);
-      if (!entry) { toast.error("Créneau introuvable"); return; }
-
       const { count: enrollCount } = await supabase
         .from("enrollments")
         .select("id", { count: "exact", head: true })
-        .eq("groupid", entry.groupid)
+        .eq("groupid", item.groupid)
         .eq("status", "active");
 
       const { data: session, error } = await supabase
         .from("sessions")
         .insert({
           id: uuid(),
-          groupid: entry.groupid,
+          groupid: item.groupid,
           professorid: user.id,
-          roomid: entry.roomid,
-          session_date: item.sessiondate,
-          start_time: entry.starttime,
-          end_time: entry.endtime,
+          roomid: item.roomid || null,
+          sessiondate: item.sessiondate,
+          starttime: item.starttime,
+          endtime: item.endtime,
           status: "ACTIVE",
-          total_students: enrollCount ?? 0,
+          totalstudents: enrollCount ?? 0,
         })
         .select("id")
         .single();
 
       if (error) throw error;
       if (session) {
-        toast.success("Séance créée — vous pouvez maintenant saisir les présences");
+        mascot.show("validation", "Séance créée", "Vous pouvez maintenant saisir les présences.");
         router.push(`/professor/sessions/${session.id}`);
       }
     } catch (err) {
@@ -279,33 +248,30 @@ export default function ProfessorTimetablePage() {
   const handleAnnuler = async (item: DayItem) => {
     setActionInProgress(true);
     try {
-      const entry = entries.find((e) => e.id === item.scheduleId);
-      if (!entry) { toast.error("Créneau introuvable"); return; }
-
       const { count: enrollCount } = await supabase
         .from("enrollments")
         .select("id", { count: "exact", head: true })
-        .eq("groupid", entry.groupid)
+        .eq("groupid", item.groupid)
         .eq("status", "active");
 
       const { data: session, error } = await supabase
         .from("sessions")
         .insert({
           id: uuid(),
-          groupid: entry.groupid,
-          professorid: entry.professorid,
-          roomid: entry.roomid,
-          session_date: item.sessiondate,
-          start_time: entry.starttime,
-          end_time: entry.endtime,
+          groupid: item.groupid,
+          professorid: item.professorid || null,
+          roomid: item.roomid || null,
+          sessiondate: item.sessiondate,
+          starttime: item.starttime,
+          endtime: item.endtime,
           status: "CANCELLED",
-          total_students: enrollCount ?? 0,
+          totalstudents: enrollCount ?? 0,
         })
         .select("id")
         .single();
 
       if (error) throw error;
-      toast.success("Séance annulée");
+      mascot.show("validation", "Séance annulée", "Le créneau a été retiré de la semaine.");
       if (session) {
         setSessions((prev) => [
           ...prev,
@@ -314,7 +280,7 @@ export default function ProfessorTimetablePage() {
             starttime: item.starttime, endtime: item.endtime,
             moduleName: item.moduleName, groupName: item.groupName,
             roomName: item.roomName, status: "CANCELLED",
-            sessiondate: item.sessiondate, groupid: entry.groupid,
+            sessiondate: item.sessiondate, groupid: item.groupid,
           },
         ]);
       }
@@ -333,40 +299,35 @@ export default function ProfessorTimetablePage() {
     return colors[Math.abs(hash) % colors.length];
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="flex flex-col items-center gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Chargement...</p>
-      </div>
-    </div>
-  );
+  if (loading) return <LoadingState label="Chargement de l'emploi du temps..." />;
 
-  const totalItems = effectiveEntries.length + sessions.length;
+  const totalItems = occurrences.length + sessions.length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-6 pb-10">
+      <div className="flex flex-col gap-4 rounded-3xl border border-[#6d28d9]/10 bg-white p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Emploi du temps</h1>
-          <p className="text-muted-foreground">
-            {effectiveEntries.length} créneau{effectiveEntries.length > 1 ? "x" : ""} hebdomadaire{effectiveEntries.length > 1 ? "s" : ""}
+          <h1 className="text-xl font-extrabold text-[#1a1a2e]">Mon Emploi du Temps</h1>
+          <p className="text-xs font-semibold text-[#64748b] mt-0.5">
+            {occurrences.length} créneau{occurrences.length > 1 ? "x" : ""} hebdomadaire{occurrences.length > 1 ? "s" : ""}
             {sessions.length > 0 && ` · ${sessions.length} séance${sessions.length > 1 ? "s" : ""} cette semaine`}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftWeek(-1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm font-medium min-w-[180px] text-center whitespace-nowrap flex items-center gap-1.5">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            {weekLabel}
-          </span>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftWeek(1)}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center rounded-2xl border border-[#6d28d9]/10 bg-[#f8f9fc] p-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-[#6d28d9]" onClick={() => shiftWeek(-1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="min-w-[170px] px-2 text-center text-xs font-extrabold text-[#1a1a2e] flex items-center justify-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-[#6d28d9]" />
+              {weekLabel}
+            </span>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-[#6d28d9]" onClick={() => shiftWeek(1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
           {!isCurrentWeek() && (
-            <Button variant="secondary" size="sm" className="h-8 text-xs"
+            <Button variant="outline" size="sm" className="h-10 rounded-xl border-[#6d28d9]/20 text-xs font-extrabold text-[#6d28d9] hover:bg-[#6d28d9]/10"
               onClick={() => setWeekStart(getWeekStart(new Date()))}>
               Cette semaine
             </Button>
@@ -374,120 +335,138 @@ export default function ProfessorTimetablePage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 rounded-2xl border border-[#6d28d9]/15 bg-white p-4 shadow-xs">
+        <Mascot pose="eureka" size="sm" animate={false} />
+        <p className="text-xs font-semibold text-[#64748b]">
+          <strong className="text-[#6d28d9]">Astuce :</strong>{" "}
+          cliquez sur un créneau pour valider la séance et saisir les présences des étudiants,
+          ou ouvrez une séance existante pour la gérer.
+        </p>
+      </div>
+
       {totalItems === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <CalendarDays className="h-16 w-16 mb-4 opacity-20" />
-          <p className="text-lg font-medium">Aucune séance planifiée</p>
-          <p className="text-sm">Contactez l&apos;administration pour configurer votre emploi du temps</p>
-        </div>
+        <EmptyState
+          pose="reflexion"
+          title="Aucune séance planifiée"
+          hint="Contactez l'administration pour configurer votre emploi du temps"
+        />
       ) : (
-        <div className="overflow-auto border rounded-lg">
-          <div className="min-w-[900px]">
-            <div className="grid" style={{ gridTemplateColumns: `100px repeat(${DAYS.length}, 1fr)` }}>
-              <div className="sticky left-0 bg-background z-10 border-r border-b p-3 font-semibold text-sm text-muted-foreground">Créneau</div>
-              {DAYS.map((day, i) => {
-                const dateStr = weekDates[i];
-                const dateDisplay = new Date(dateStr + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric" });
-                const isToday = day.value === todayDow && isCurrentWeek();
-                return (
-                  <div key={day.value} className={`border-r border-b p-3 font-semibold text-sm text-center last:border-r-0 ${isToday ? "bg-primary/5" : "bg-muted/30"}`}>
-                    {day.label}
-                    <span className={`block text-xs ${isToday ? "text-primary" : "text-muted-foreground"}`}>{dateDisplay}</span>
-                  </div>
-                );
-              })}
-
-              {gridData.allStartTimes.length === 0 ? (
-                <div className="col-span-full p-10 text-center text-muted-foreground">Aucune séance cette semaine</div>
-              ) : (
-                gridData.allStartTimes.map((starttime) => {
-                  const slot = gridData.timeSlotMap[starttime];
-                  return (
-                    <div key={starttime} className="contents">
-                      <div className="sticky left-0 bg-background z-10 border-r border-b p-3 text-sm text-muted-foreground whitespace-nowrap flex items-center gap-1.5">
-                        <Clock className="h-4 w-4 shrink-0" />
-                        {slot?.label ?? starttime}
-                      </div>
-                      {DAYS.map((day, i) => {
-                        const dateStr = weekDates[i];
-                        const items = gridData.dayItemsByDay[day.value]?.filter((it) => it.starttime === starttime) ?? [];
-                        const item = items[0];
-
-                        if (!item) {
-                          return <div key={`${day.value}-${starttime}`} className="border-r border-b last:border-r-0" />;
-                        }
-
-                        const isSession = item.type === "session";
-                        const isCancelled = isSession && ((item.status ?? "").toLowerCase() === "cancelled");
-                        const isSchedPast = !isSession && isTimePast(item.sessiondate, item.starttime);
-
-                        return (
-                          <div
-                            key={`${day.value}-${starttime}`}
-                            onClick={() => handleItemClick(item)}
-                            className={`border-r border-b p-2 min-h-[110px] last:border-r-0 transition-colors cursor-pointer hover:bg-accent/30 ${isCancelled ? "opacity-50" : ""}`}
-                          >
-                            <div className={`h-full flex flex-col gap-1 p-1.5 rounded ${isCancelled ? "bg-red-50/40" : ""}`}
-                              style={!isCancelled ? { borderLeft: `4px solid ${moduleColor(item.moduleName)}`, backgroundColor: `${moduleColor(item.moduleName)}08` } : {}}>
-                              <div className="flex items-start justify-between gap-1">
-                                <span className={`text-sm font-semibold leading-tight line-clamp-2 flex-1 ${isCancelled ? "line-through text-muted-foreground" : ""}`}>
-                                  {item.moduleName}
-                                </span>
-                                <div className="flex items-center gap-0.5 shrink-0">
-                                  {isCancelled && <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-red-600 border-red-200 bg-red-50">Annulé</Badge>}
-                                  {isSession && <ExternalLink className="h-3 w-3 text-muted-foreground/40" />}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <MapPin className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">{item.roomName}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <Users className="h-3.5 w-3.5 shrink-0" />
-                                <span className="truncate">{item.groupName}</span>
-                              </div>
-                              {isSession && !isCancelled ? (
-                                <div className="mt-auto pt-0.5">
-                                  <SessionStatusBadge status={item.status ?? ""} />
-                                </div>
-                              ) : !isSession && isSchedPast ? (
-                                <div className="mt-auto pt-0.5">
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-200">
-                                    <PenLine className="h-3 w-3 mr-0.5" />À saisir
-                                  </Badge>
-                                </div>
-                              ) : !isSession ? (
-                                <div className="mt-auto pt-0.5">
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-slate-500/10 text-slate-500 border-slate-200">
-                                    Planifié
-                                  </Badge>
-                                </div>
-                              ) : null}
-                            </div>
+        <div className="overflow-hidden rounded-3xl border border-[#6d28d9]/10 bg-white shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[900px]">
+              <thead>
+                <tr className="border-b border-[#6d28d9]/10 bg-[#f8f9fc]">
+                  <th className="sticky left-0 z-20 bg-[#f8f9fc] p-3.5 text-xs font-extrabold text-[#6d28d9] border-r border-[#6d28d9]/10">Créneau</th>
+                  {DAYS.map((day, i) => {
+                    const dateStr = weekDates[i];
+                    const dateDisplay = new Date(dateStr + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+                    const isTodayDay = day.value === todayDow && isCurrentWeek();
+                    return (
+                      <th key={day.value} className="p-3 text-center border-r border-[#6d28d9]/10 last:border-r-0">
+                        <div className={`inline-flex rounded-xl px-3.5 py-1 border ${isTodayDay ? "bg-[#6d28d9] text-white border-none shadow-xs font-extrabold" : "bg-white border-[#6d28d9]/10 text-[#1a1a2e] font-bold"}`}>
+                          <span>{day.label}</span>
+                          <span className={`ml-1.5 ${isTodayDay ? "text-white/80" : "text-[#64748b]"}`}>{dateDisplay}</span>
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {gridData.allStartTimes.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-10 text-center text-xs font-semibold text-[#64748b]">Aucune séance cette semaine</td>
+                  </tr>
+                ) : (
+                  gridData.allStartTimes.map((starttime) => {
+                    const slot = gridData.timeSlotMap[starttime];
+                    return (
+                      <tr key={starttime} className="border-t border-[#6d28d9]/5">
+                        <td className="sticky left-0 z-10 bg-white p-3 text-xs font-bold text-[#64748b] border-r border-[#6d28d9]/10">
+                          <div className="inline-flex items-center gap-1.5 rounded-xl bg-[#f3f0ff] px-2.5 py-1 text-[#6d28d9]">
+                            <Clock className="h-3.5 w-3.5 shrink-0" />
+                            <span>{slot?.label ?? starttime}</span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                        </td>
+                        {DAYS.map((day) => {
+                          const items = gridData.dayItemsByDay[day.value]?.filter((it) => it.starttime === starttime) ?? [];
+                          const item = items[0];
+
+                          if (!item) {
+                            return <td key={`${day.value}-${starttime}`} className="p-2 border-r border-[#6d28d9]/10 last:border-r-0 min-h-[110px]" />;
+                          }
+
+                          const isSession = item.type === "session";
+                          const isCancelled = isSession && ((item.status ?? "").toLowerCase() === "cancelled");
+                          const isSchedPast = !isSession && isTimePast(item.sessiondate, item.starttime);
+
+                          return (
+                            <td
+                              key={`${day.value}-${starttime}`}
+                              onClick={() => handleItemClick(item)}
+                              className="p-2 align-top border-r border-[#6d28d9]/10 last:border-r-0 min-h-[110px]"
+                            >
+                              <div
+                                className={`group relative flex h-full min-h-[95px] cursor-pointer flex-col justify-between rounded-2xl p-3 shadow-xs transition-all duration-200 hover:-translate-y-1 hover:shadow-md border border-black/5 ${
+                                  isCancelled ? "opacity-50" : ""
+                                }`}
+                                style={!isCancelled ? { borderLeft: `5px solid ${moduleColor(item.moduleName)}`, backgroundColor: `${moduleColor(item.moduleName)}10` } : { backgroundColor: "#fef2f2" }}
+                              >
+                                <div className="space-y-1">
+                                  <div className="flex items-start justify-between gap-1">
+                                    <span className={`text-xs font-extrabold text-[#1a1a2e] line-clamp-2 ${isCancelled ? "line-through text-[#64748b]" : ""}`}>
+                                      {item.moduleName}
+                                    </span>
+                                    {isSession && <ExternalLink className="h-3 w-3 text-[#64748b]/50 shrink-0" />}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#64748b]">
+                                    <MapPin className="h-3.5 w-3.5 text-[#f97316] shrink-0" />
+                                    <span className="truncate">{item.roomName}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#64748b]">
+                                    <Users className="h-3.5 w-3.5 text-[#6d28d9] shrink-0" />
+                                    <span className="truncate">{item.groupName}</span>
+                                  </div>
+                                </div>
+                                <div className="mt-2 pt-1.5 border-t border-black/5">
+                                  {isSession && !isCancelled ? (
+                                    <SessionStatusBadge status={item.status ?? ""} />
+                                  ) : !isSession && isSchedPast ? (
+                                    <Badge className="bg-amber-500/10 text-amber-700 text-[9px] font-extrabold border-none">
+                                      <PenLine className="h-3 w-3 mr-0.5" /> À saisir
+                                    </Badge>
+                                  ) : !isSession ? (
+                                    <Badge className="bg-slate-500/10 text-slate-700 text-[9px] font-extrabold border-none">
+                                      Planifié
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base font-extrabold text-[#1a1a2e]">
               {actionTarget && isTimePast(actionTarget.sessiondate, actionTarget.starttime)
                 ? "Saisir les présences"
                 : "Annuler la séance"}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs font-semibold text-[#64748b]">
               {actionTarget && (
                 <>
-                  {actionTarget.moduleName} — {actionTarget.starttime}–{actionTarget.endtime}
+                  <strong className="text-[#6d28d9]">{actionTarget.moduleName}</strong> — {actionTarget.starttime} à {actionTarget.endtime}
                   <br />
                   {new Date(actionTarget.sessiondate + "T00:00:00").toLocaleDateString("fr-FR", {
                     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -496,7 +475,7 @@ export default function ProfessorTimetablePage() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2.5 pt-4">
             <Button variant="outline" onClick={() => { setDialogOpen(false); setActionTarget(null); }}>Retour</Button>
             {actionTarget && isTimePast(actionTarget.sessiondate, actionTarget.starttime) ? (
               <Button onClick={() => handleSaisirPresences(actionTarget)} disabled={actionInProgress}>

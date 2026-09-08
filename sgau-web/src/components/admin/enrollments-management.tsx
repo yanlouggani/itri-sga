@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import { uuid } from "@/lib/uuid";
+import { MascotHeader } from "@/components/mascot/MascotHeader";
+import { Mascot } from "@/components/mascot/Mascot";
+import { EmptyState } from "@/components/mascot/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +19,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -114,12 +117,17 @@ export function EnrollmentsManagement({ initialEnrollments, students, groups }: 
 
   const statusBadge = (status: Enrollment["status"]) => {
     const map = {
-      active: { label: "Actif", classes: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-      completed: { label: "Terminé", classes: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
-      dropped: { label: "Abandonné", classes: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+      active: { label: "Actif", dot: "bg-emerald-500 animate-pulse", classes: "bg-emerald-50 text-emerald-600" },
+      completed: { label: "Terminé", dot: "bg-[#6d28d9]", classes: "bg-[#6d28d9]/10 text-[#6d28d9]" },
+      dropped: { label: "Abandonné", dot: "bg-amber-500", classes: "bg-amber-50 text-amber-600" },
     };
     const m = map[status];
-    return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${m.classes}`}>{m.label}</span>;
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${m.classes}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />
+        {m.label}
+      </span>
+    );
   };
 
   const filtered = enrollments.filter(
@@ -128,116 +136,151 @@ export function EnrollmentsManagement({ initialEnrollments, students, groups }: 
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Inscriptions</h1>
-          <p className="text-muted-foreground">{enrollments.length} inscription(s)</p>
-        </div>
-        <Button onClick={openAdd}><Plus className="mr-2 h-4 w-4" />Ajouter</Button>
-      </div>
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Rechercher par étudiant ou groupe..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+    <div className="space-y-8 pb-10">
+      {/* Mascot Header */}
+      <MascotHeader
+        title="Gestion des Inscriptions"
+        description="Affectez les étudiants aux groupes de formation et suivez le statut de chaque inscription."
+        pose="tous"
+        mascotMessage={`${enrollments.length} inscription(s) enregistrée(s)`}
+        badge="Formation & Inscriptions"
+      >
+        <Button
+          onClick={openAdd}
+          className="h-11 rounded-2xl bg-gradient-to-r from-[#6d28d9] to-[#8b5cf6] px-5 font-bold text-white shadow-md shadow-[#6d28d9]/20 hover:shadow-lg"
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Ajouter une Inscription
+        </Button>
+      </MascotHeader>
+
+      {/* Main Table Card */}
+      <Card className="overflow-hidden rounded-3xl border border-[#6d28d9]/10 bg-white shadow-xs">
+        <div className="p-5 border-b border-[#6d28d9]/5">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6d28d9]" />
+            <Input
+              placeholder="Rechercher par étudiant ou groupe..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-11 rounded-2xl border-[#6d28d9]/15 bg-[#f8f9fc] pl-10 text-xs font-semibold text-[#1a1a2e] focus:border-[#6d28d9] focus:bg-white"
+            />
           </div>
-        </CardHeader>
+        </div>
+
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Étudiant</TableHead>
-                <TableHead>Groupe</TableHead>
-                <TableHead className="hidden md:table-cell">Formation</TableHead>
-                <TableHead className="hidden sm:table-cell">Niveau</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="hidden lg:table-cell">Date d'inscription</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{e.studentName ?? "—"}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{e.groupName ?? "—"}</span>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <Badge variant="outline" className="text-xs">{e.moduleName ?? "—"}</Badge>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                  </TableCell>
-                  <TableCell>{statusBadge(e.status)}</TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(e.enrolledat).toLocaleDateString("fr-FR")}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>} />
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={() => openEdit(e)}><Edit className="mr-2 h-4 w-4" />Modifier</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(e)}><Trash2 className="mr-2 h-4 w-4" />Supprimer</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+          {filtered.length === 0 ? (
+            <EmptyState
+              pose="reflexion"
+              title="Aucune inscription trouvée"
+              hint="Aucune inscription ne correspond à vos critères de recherche."
+            />
+          ) : (
+            <Table>
+              <TableHeader className="bg-[#f8f9fc]">
+                <TableRow className="border-b border-[#6d28d9]/5 hover:bg-transparent">
+                  <TableHead className="py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9]">Étudiant</TableHead>
+                  <TableHead className="py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9]">Groupe</TableHead>
+                  <TableHead className="hidden py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9] md:table-cell">Formation</TableHead>
+                  <TableHead className="hidden py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9] sm:table-cell">Statut</TableHead>
+                  <TableHead className="hidden py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9] lg:table-cell">Date d&apos;inscription</TableHead>
+                  <TableHead className="w-16 py-4" />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((e) => (
+                  <TableRow key={e.id} className="border-b border-[#6d28d9]/5 transition-colors hover:bg-[#f3f0ff]/30">
+                    <TableCell className="py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-xl bg-[#6d28d9]/10 p-2">
+                          <ClipboardList className="h-4 w-4 text-[#6d28d9]" />
+                        </div>
+                        <p className="text-sm font-bold text-[#1a1a2e]">{e.studentName ?? "—"}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <span className="text-xs font-semibold text-[#64748b]">{e.groupName ?? "—"}</span>
+                    </TableCell>
+                    <TableCell className="hidden py-4 md:table-cell">
+                      <Badge className="rounded-full bg-[#6d28d9]/10 text-xs font-semibold text-[#6d28d9] border-none">{e.moduleName ?? "—"}</Badge>
+                    </TableCell>
+                    <TableCell className="hidden py-4 sm:table-cell">{statusBadge(e.status)}</TableCell>
+                    <TableCell className="hidden py-4 lg:table-cell">
+                      <span className="text-xs font-medium text-[#64748b]">
+                        {new Date(e.enrolledat).toLocaleDateString("fr-FR")}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-[#64748b] hover:bg-[#6d28d9]/10 hover:text-[#6d28d9]"><MoreHorizontal className="h-4 w-4" /></Button>} />
+                        <DropdownMenuContent align="end" className="w-44 rounded-2xl p-1.5 shadow-xl">
+                          <DropdownMenuItem onClick={() => openEdit(e)} className="rounded-xl text-xs font-semibold">
+                            <Edit className="mr-2 h-4 w-4 text-[#6d28d9]" />
+                            Modifier
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="rounded-xl text-xs font-semibold text-rose-600 focus:bg-rose-50" onClick={() => handleDelete(e)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Supprimer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
+
+      {/* Modal Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ClipboardList className="h-5 w-5 text-primary" />
-              {editing ? "Modifier l'inscription" : "Ajouter une inscription"}
-            </DialogTitle>
-            <DialogDescription>
-              {editing ? "Modifiez les informations de l'inscription." : "Inscrivez un étudiant à un groupe."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5 py-4">
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium text-muted-foreground border-b pb-1">Étudiant & Groupe</h4>
-              <div className="space-y-2">
-                <Label htmlFor="enr-student">Étudiant</Label>
-                <Select value={form.studentid} onValueChange={(v) => { if (v) setForm({ ...form, studentid: v }); }}>
-                  <SelectTrigger id="enr-student"><SelectValue placeholder="Sélectionner un étudiant">{(v: string) => students.find((s) => s.id === v)?.fullName ?? v}</SelectValue></SelectTrigger>
-                  <SelectContent>
-                    {students.map((s) => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="enr-group">Groupe</Label>
-                <Select value={form.groupid} onValueChange={(v) => { if (v) setForm({ ...form, groupid: v }); }}>
-                  <SelectTrigger id="enr-group"><SelectValue placeholder="Sélectionner un groupe">{(v: string) => {
-                    const g = groups.find((g) => g.id === v);
-                    return g ? `${g.name} (${g.moduleName})` : v;
-                  }}</SelectValue></SelectTrigger>
-                  <SelectContent>
-                    {groups.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        <span className="font-medium">{g.name}</span>
-                        <span className="text-muted-foreground"> — {g.moduleName}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        <DialogContent className="sm:max-w-[500px] rounded-3xl p-6">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-3">
+              <Mascot pose="validation" size="sm" />
+              <div>
+                <DialogTitle className="text-lg font-bold text-[#1a1a2e]">
+                  {editing ? "Modifier l'inscription" : "Ajouter une inscription"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-[#64748b]">
+                  {editing ? "Modifiez les informations de l'inscription." : "Inscrivez un étudiant à un groupe de formation."}
+                </DialogDescription>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="enr-status">Statut</Label>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="enr-student" className="text-xs font-bold text-[#1a1a2e]">Étudiant</Label>
+              <Select value={form.studentid} onValueChange={(v) => { if (v) setForm({ ...form, studentid: v }); }}>
+                <SelectTrigger id="enr-student" className="rounded-xl border-[#6d28d9]/10 text-xs"><SelectValue placeholder="Sélectionner un étudiant">{(v: string) => students.find((s) => s.id === v)?.fullName ?? v}</SelectValue></SelectTrigger>
+                <SelectContent>
+                  {students.map((s) => <SelectItem key={s.id} value={s.id}>{s.fullName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="enr-group" className="text-xs font-bold text-[#1a1a2e]">Groupe</Label>
+              <Select value={form.groupid} onValueChange={(v) => { if (v) setForm({ ...form, groupid: v }); }}>
+                <SelectTrigger id="enr-group" className="rounded-xl border-[#6d28d9]/10 text-xs"><SelectValue placeholder="Sélectionner un groupe">{(v: string) => {
+                  const g = groups.find((g) => g.id === v);
+                  return g ? `${g.name} (${g.moduleName})` : v;
+                }}</SelectValue></SelectTrigger>
+                <SelectContent>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      <span className="font-medium">{g.name}</span>
+                      <span className="text-[#64748b]"> — {g.moduleName}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="enr-status" className="text-xs font-bold text-[#1a1a2e]">Statut</Label>
               <Select value={form.status} onValueChange={(v) => { if (v) setForm({ ...form, status: v as Enrollment["status"] }); }}>
-                <SelectTrigger id="enr-status"><SelectValue placeholder="Sélectionner un statut">{(v: string) => {
+                <SelectTrigger id="enr-status" className="rounded-xl border-[#6d28d9]/10 text-xs"><SelectValue placeholder="Sélectionner un statut">{(v: string) => {
                   const map: Record<string, string> = { active: "Actif", completed: "Terminé", dropped: "Abandonné" };
                   return map[v] ?? v;
                 }}</SelectValue></SelectTrigger>
@@ -249,10 +292,12 @@ export function EnrollmentsManagement({ initialEnrollments, students, groups }: 
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Annuler</Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? "Enregistrer" : "Créer"}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">Annuler</Button>
+            <Button onClick={handleSave} disabled={saving} className="rounded-xl bg-[#6d28d9] hover:bg-[#5b21b6] text-white font-bold">
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editing ? "Enregistrer" : "Créer l'inscription"}
             </Button>
           </DialogFooter>
         </DialogContent>

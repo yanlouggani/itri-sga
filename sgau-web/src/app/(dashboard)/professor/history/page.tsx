@@ -6,14 +6,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
-  Clock, MapPin, Users, CalendarDays, Search, Loader2, ChevronRight, GraduationCap,
+  Clock, MapPin, Users, CalendarDays, Search, ChevronRight, GraduationCap, History,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState, LoadingState } from "@/components/mascot/EmptyState";
 
 type Session = {
   id: string; moduleName: string; groupName: string; roomName: string;
@@ -63,7 +64,16 @@ export default function ProfessorHistoryPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (!active) return;
+      await load();
+    })();
+    return () => {
+      active = false;
+    };
+  }, [load]);
 
   const filtered = sessions.filter((s) => {
     if (search) {
@@ -81,30 +91,24 @@ export default function ProfessorHistoryPage() {
     grouped[key].push(s);
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="flex flex-col items-center gap-3">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Chargement de l&apos;historique...</p>
-      </div>
-    </div>
-  );
+  if (loading) return <LoadingState label="Chargement de l&apos;historique..." />;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Historique</h1>
-        <p className="text-muted-foreground">{filtered.length} séance{filtered.length > 1 ? "s" : ""}</p>
-      </div>
+      <PageHeader
+        title="Historique"
+        subtitle={`${filtered.length} séance${filtered.length > 1 ? "s" : ""}`}
+        icon={<History className="h-5 w-5" />}
+      />
 
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#64748b]" />
           <Input placeholder="Rechercher par module, groupe..." value={search}
-            onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+            onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 text-sm border-[#6d28d9]/10" />
         </div>
         {["", "completed", "active", "scheduled", "cancelled"].map((s) => (
-          <Button key={s} variant={statusFilter === s ? "default" : "outline"} size="sm" className="h-7 text-xs"
+          <Button key={s} variant={statusFilter === s ? "default" : "outline"} size="sm" className="h-7 text-xs rounded-lg"
             onClick={() => setStatusFilter(s)}>
             {s === "" ? "Tous" : s === "active" ? "En cours" : s === "completed" ? "Terminé" : s === "scheduled" ? "Planifié" : "Annulé"}
           </Button>
@@ -112,58 +116,56 @@ export default function ProfessorHistoryPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <Card className="border-border/50">
-          <CardContent className="flex flex-col items-center justify-center py-20">
-            <div className="rounded-full bg-muted p-4 mb-5">
-              <CalendarDays className="h-10 w-10 text-muted-foreground/60" />
-            </div>
-            <p className="text-xl font-semibold text-muted-foreground mb-1">Aucune séance trouvée</p>
-            <p className="text-sm text-muted-foreground/60">{sessions.length === 0 ? "Commencez par planifier des séances" : "Essayez de modifier vos filtres"}</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          pose="reflexion"
+          title="Aucune séance trouvée"
+          hint={sessions.length === 0 ? "Commencez par planifier des séances" : "Essayez de modifier vos filtres"}
+        />
       ) : (
         Object.entries(grouped).map(([date, daySessions]) => (
           <section key={date}>
             <div className="flex items-center gap-3 mb-3">
-              <CalendarDays className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-muted-foreground">
+              <div className="rounded-lg bg-[#6d28d9]/10 p-1.5">
+                <CalendarDays className="h-4 w-4 text-[#6d28d9]" />
+              </div>
+              <h2 className="text-sm font-semibold text-[#64748b]">
                 {format(new Date(date + "T00:00:00"), "EEEE d MMMM yyyy", { locale: fr })}
               </h2>
-              <Badge variant="secondary" className="text-[10px] font-mono">{daySessions.length}</Badge>
+              <Badge variant="secondary" className="text-[10px] font-mono bg-[#6d28d9]/10 text-[#6d28d9] border-none">{daySessions.length}</Badge>
             </div>
             <div className="space-y-2">
               {daySessions.map((s) => (
-                <Card key={s.id} className="border-border/50 overflow-hidden transition-all hover:shadow-sm cursor-pointer"
+                <Card key={s.id} className="border border-[#6d28d9]/10 bg-white shadow-sm shadow-[#6d28d9]/5 overflow-hidden transition-all hover:shadow-md hover:shadow-[#6d28d9]/[0.06] hover:border-[#6d28d9]/20 cursor-pointer"
                   onClick={() => router.push(`/professor/sessions/${s.id}`)}>
                   <div className={cn("h-0.5", {
-                    "bg-emerald-500": s.status?.toLowerCase() === "active",
-                    "bg-blue-500": s.status?.toLowerCase() === "scheduled",
-                    "bg-muted-foreground/30": s.status?.toLowerCase() === "completed",
+                    "bg-[#f97316]": s.status?.toLowerCase() === "active",
+                    "bg-[#6d28d9]": s.status?.toLowerCase() === "scheduled",
+                    "bg-[#64748b]/30": s.status?.toLowerCase() === "completed",
                     "bg-red-500": s.status?.toLowerCase() === "cancelled",
                   })} />
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className={cn("rounded-lg p-2 shrink-0", {
-                          "bg-emerald-500/10": s.status?.toLowerCase() === "active",
-                          "bg-blue-500/10": s.status?.toLowerCase() === "scheduled",
-                          "bg-muted": s.status?.toLowerCase() === "completed",
+                          "bg-[#f97316]/10": s.status?.toLowerCase() === "active",
+                          "bg-[#6d28d9]/10": s.status?.toLowerCase() === "scheduled",
+                          "bg-[#f8f9fc]": s.status?.toLowerCase() === "completed",
                           "bg-red-500/10": s.status?.toLowerCase() === "cancelled",
                         })}>
                           <GraduationCap className={cn("h-4 w-4", {
-                            "text-emerald-600": s.status?.toLowerCase() === "active",
-                            "text-blue-600": s.status?.toLowerCase() === "scheduled",
-                            "text-muted-foreground": s.status?.toLowerCase() === "completed",
+                            "text-[#f97316]": s.status?.toLowerCase() === "active",
+                            "text-[#6d28d9]": s.status?.toLowerCase() === "scheduled",
+                            "text-[#64748b]": s.status?.toLowerCase() === "completed",
                             "text-red-600": s.status?.toLowerCase() === "cancelled",
                           })} />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium truncate">{s.moduleName}</p>
-                            <Badge variant="outline" className="text-[10px] font-mono shrink-0">{s.sessiontype}</Badge>
+                            <p className="text-sm font-medium text-[#1a1a2e] truncate">{s.moduleName}</p>
+                            <Badge variant="outline" className="text-[10px] font-mono shrink-0 border-[#6d28d9]/15">{s.sessiontype}</Badge>
                             <SessionLabel status={s.status} />
                           </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground mt-0.5">
+                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[#64748b] mt-0.5">
                             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{s.starttime}</span>
                             <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{s.roomName}</span>
                             <span className="flex items-center gap-1"><Users className="h-3 w-3" />{s.groupName}</span>
@@ -173,11 +175,11 @@ export default function ProfessorHistoryPage() {
                       <div className="flex items-center gap-3 shrink-0">
                         {s.totalstudents > 0 && (
                           <div className="text-right hidden sm:block">
-                            <p className="text-sm font-semibold tabular-nums">{s.presentcount}</p>
-                            <p className="text-xs text-muted-foreground tabular-nums">/{s.totalstudents}</p>
+                            <p className="text-sm font-semibold tabular-nums text-[#1a1a2e]">{s.presentcount}</p>
+                            <p className="text-xs text-[#64748b] tabular-nums">/{s.totalstudents}</p>
                           </div>
                         )}
-                        <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
+                        <ChevronRight className="h-4 w-4 text-[#64748b]/40" />
                       </div>
                     </div>
                   </CardContent>
@@ -194,13 +196,13 @@ export default function ProfessorHistoryPage() {
 function SessionLabel({ status }: { status: string }) {
   const k = status?.toLowerCase() ?? "";
   const styles: Record<string, string> = {
-    active: "bg-emerald-500/10 text-emerald-600",
-    scheduled: "bg-blue-500/10 text-blue-600",
-    completed: "bg-muted text-muted-foreground",
-    cancelled: "bg-red-500/10 text-red-600",
+    active: "bg-[#f97316]/10 text-[#f97316] border-none",
+    scheduled: "bg-[#f8f9fc] text-[#64748b] border-none",
+    completed: "bg-[#6d28d9]/10 text-[#6d28d9] border-none",
+    cancelled: "bg-red-500/10 text-red-600 border-red-200",
   };
   const labels: Record<string, string> = {
     active: "En cours", scheduled: "Planifié", completed: "Terminé", cancelled: "Annulé",
   };
-  return <Badge variant="outline" className={cn("text-[10px]", styles[k])}>{labels[k] ?? status}</Badge>;
+  return <Badge variant="outline" className={cn("text-[10px] rounded-full", styles[k] ?? "")}>{labels[k] ?? status}</Badge>;
 }

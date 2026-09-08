@@ -11,10 +11,12 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertTriangle, Clock, XCircle, CheckCircle, CalendarDays, GraduationCap,
-  FileText, Loader2,
+  AlertTriangle, Clock, XCircle,
+  FileText, Loader2, GraduationCap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useMascot } from "@/components/mascot/MascotProvider";
+import { EmptyState, LoadingState } from "@/components/mascot/EmptyState";
 
 type Record_ = {
   id: string; sessionid: string; sessiondate: string; starttime: string;
@@ -30,8 +32,7 @@ export default function StudentAbsencesPage() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const supabase = createClient();
-
-  useEffect(() => { load(); }, []);
+  const mascot = useMascot();
 
   const load = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -63,6 +64,17 @@ export default function StudentAbsencesPage() {
     setLoading(false);
   };
 
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (!active) return;
+      await load();
+    })();
+    return () => {
+      active = false;
+    };
+  }, [load]);
+
   const openJustify = (r: Record_) => {
     setSelectedRecord(r);
     setReason(r.justificationreason ?? "");
@@ -91,7 +103,7 @@ export default function StudentAbsencesPage() {
 
       if (error) throw error;
 
-      toast.success("Justification soumise");
+      mascot.show("validation", "Justification soumise", "Elle sera examinée par votre administration.");
       setDialogOpen(false);
       load();
     } catch (err) { toast.error("Erreur", { description: String(err) }); }
@@ -121,11 +133,7 @@ export default function StudentAbsencesPage() {
   const totalJustified = records.filter((r) => r.status === "justified").length;
   const pendingJustifications = records.filter((r) => r.justificationstatus === "PENDING").length;
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-    </div>
-  );
+  if (loading) return <LoadingState label="Chargement de vos absences..." />;
 
   return (
     <div className="space-y-6">
@@ -167,10 +175,12 @@ export default function StudentAbsencesPage() {
         </CardHeader>
         <CardContent>
           {records.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <CalendarDays className="h-12 w-12 text-muted-foreground/50 mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">Aucune absence</p>
-            </div>
+            <EmptyState
+              compact
+              pose="celebration"
+              title="Aucune absence à signaler"
+              hint="Continuez sur cette lancée, votre assiduité est parfaite."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -230,7 +240,7 @@ export default function StudentAbsencesPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="justify-reason">Motif de l'absence</Label>
+              <Label htmlFor="justify-reason">Motif de l&apos;absence</Label>
               <Textarea
                 id="justify-reason"
                 value={reason}

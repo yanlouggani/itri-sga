@@ -1,21 +1,38 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Loader2, CheckCircle, XCircle, FileText, CalendarDays, Clock, GraduationCap, AlertTriangle,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  FileText,
+  CalendarDays,
+  Clock,
+  GraduationCap,
+  AlertTriangle,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { MascotHeader } from "@/components/mascot/MascotHeader";
+import { Mascot } from "@/components/mascot/Mascot";
+import { EmptyState, LoadingState } from "@/components/mascot/EmptyState";
+import { useMascot } from "@/components/mascot/MascotProvider";
 
 type Justification = {
   sessionid: string;
@@ -39,57 +56,79 @@ export default function AdminJustificationsPage() {
   const [unauthorized, setUnauthorized] = useState(false);
   const supabase = createClient();
   const router = useRouter();
+  const mascot = useMascot();
 
-  useEffect(() => {
-    checkAccess();
-  }, []);
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from("attendance")
+      .select(
+        "sessionid, studentid, justificationreason, justificationsubmittedat, sessions!inner(sessiondate, starttime, modules(name)), users!inner(firstname, lastname)"
+      )
+      .eq("justificationstatus", "PENDING")
+      .order("justificationsubmittedat", { ascending: false });
 
-  const checkAccess = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/login"); return; }
+    if (data) {
+      setJustifications(
+        (data as Record<string, unknown>[]).map((a) => {
+          const s = a.sessions as Record<string, unknown>;
+          const u = a.users as Record<string, unknown>;
+          const fn = (u?.firstname as string) ?? "";
+          const ln = (u?.lastname as string) ?? "";
+          return {
+            sessionid: a.sessionid as string,
+            studentid: a.studentid as string,
+            studentName: `${fn} ${ln}`,
+            studentInitials: `${(fn[0] ?? "").toUpperCase()}${(ln[0] ?? "").toUpperCase()}`,
+            moduleName: ((s?.modules as Record<string, unknown> | null)?.name as string) ?? "Module",
+            sessiondate: (s?.sessiondate as string) ?? "",
+            starttime: (s?.starttime as string) ?? "",
+            reason: (a.justificationreason as string) ?? "",
+            submittedAt: (a.justificationsubmittedat as string) ?? "",
+          };
+        })
+      );
+    }
+    setLoading(false);
+  }, [supabase]);
+
+  const checkAccess = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
     const { data: profile } = await supabase
       .from("users")
       .select("role")
       .eq("id", user.id)
       .maybeSingle();
-    if ((profile as Record<string, unknown> | null)?.role !== "admin") {
+
+    if (profile?.role !== "admin") {
       setUnauthorized(true);
       setLoading(false);
       return;
     }
-    load();
-  };
+    await load();
+  }, [load, router, supabase]);
 
-  const load = async () => {
-    const { data } = await supabase
-      .from("attendance")
-      .select("sessionid, studentid, justificationreason, justificationsubmittedat, sessions!inner(sessiondate, starttime, modules(name)), users!inner(firstname, lastname)")
-      .eq("justificationstatus", "PENDING")
-      .order("justificationsubmittedat", { ascending: false });
-    if (data) {
-      setJustifications((data as Record<string, unknown>[]).map((a) => {
-        const s = a.sessions as Record<string, unknown>;
-        const u = a.users as Record<string, unknown>;
-        const fn = u.firstname as string;
-        const ln = u.lastname as string;
-        return {
-          sessionid: a.sessionid as string,
-          studentid: a.studentid as string,
-          studentName: `${fn} ${ln}`,
-          studentInitials: `${(fn[0] ?? "").toUpperCase()}${(ln[0] ?? "").toUpperCase()}`,
-          moduleName: ((s.modules as Record<string, unknown> | null)?.name as string) ?? "",
-          sessiondate: s.sessiondate as string,
-          starttime: s.starttime as string,
-          reason: (a.justificationreason as string) ?? "",
-          submittedAt: (a.justificationsubmittedat as string) ?? "",
-        };
-      }));
-    }
-    setLoading(false);
-  };
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (!active) return;
+      await checkAccess();
+    })();
+    return () => {
+      active = false;
+    };
+  }, [checkAccess]);
 
   const handleApprove = async (j: Justification) => {
-    setProcessing(j.sessionid + j.studentid);
+    const key = j.sessionid + j.studentid;
+    setProcessing(key);
     try {
       const { error } = await supabase.rpc("process_justification", {
         p_session_id: j.sessionid,
@@ -97,9 +136,16 @@ export default function AdminJustificationsPage() {
         p_approve: true,
       });
       if (error) throw error;
-      toast.success("Justification approuvée");
-      setJustifications((prev) => prev.filter((x) => x.sessionid !== j.sessionid || x.studentid !== j.studentid));
-    } catch (err) { toast.error("Erreur", { description: String(err) }); }
+
+      mascot.show("validation", "Justification approuvée !", "L&apos;absence a été officiellement régularisée.");
+      toast.success("Demande approuvée avec succès");
+
+      setJustifications((prev) =>
+        prev.filter((x) => x.sessionid !== j.sessionid || x.studentid !== j.studentid)
+      );
+    } catch (err) {
+      toast.error("Erreur de traitement", { description: String(err) });
+    }
     setProcessing(null);
   };
 
@@ -111,7 +157,9 @@ export default function AdminJustificationsPage() {
 
   const handleReject = async () => {
     if (!rejectTarget) return;
-    setProcessing(rejectTarget.sessionid + rejectTarget.studentid);
+    const key = rejectTarget.sessionid + rejectTarget.studentid;
+    setProcessing(key);
+
     try {
       const { error } = await supabase.rpc("process_justification", {
         p_session_id: rejectTarget.sessionid,
@@ -120,80 +168,156 @@ export default function AdminJustificationsPage() {
         p_reason: rejectReason || null,
       });
       if (error) throw error;
-      toast.success("Justification refusée");
-      setJustifications((prev) => prev.filter((x) => x.sessionid !== rejectTarget.sessionid || x.studentid !== rejectTarget.studentid));
+
+      mascot.show("reflexion", "Justification refusée", "La décision et la raison ont été enregistrées.");
+      toast.info("Demande refusée");
+
+      setJustifications((prev) =>
+        prev.filter(
+          (x) => x.sessionid !== rejectTarget.sessionid || x.studentid !== rejectTarget.studentid
+        )
+      );
       setRejectDialogOpen(false);
-    } catch (err) { toast.error("Erreur", { description: String(err) }); }
+    } catch (err) {
+      toast.error("Erreur de traitement", { description: String(err) });
+    }
     setProcessing(null);
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-    </div>
-  );
+  if (loading) return <LoadingState label="Chargement des justifications d&apos;absence..." />;
 
-  if (unauthorized) return (
-    <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
-      <AlertTriangle className="h-12 w-12 text-destructive" />
-      <h2 className="text-xl font-bold">Accès refusé</h2>
-      <p className="text-muted-foreground">Vous devez être administrateur pour accéder à cette page.</p>
-      <Button onClick={() => router.push("/login")}>Retour à la connexion</Button>
-    </div>
-  );
+  if (unauthorized) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 p-8 text-center">
+        <Mascot pose="reflexion" size="lg" />
+        <h2 className="text-xl font-bold text-[#1a1a2e]">Accès réservé aux administrateurs</h2>
+        <p className="text-sm text-[#64748b] max-w-md">
+          Vous ne disposez pas des autorisations nécessaires pour valider les justifications d&apos;absence.
+        </p>
+        <Button onClick={() => router.push("/login")} className="bg-[#6d28d9] hover:bg-[#5b21b6]">
+          Retour à la connexion
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Justifications d'absences</h1>
-        <p className="text-muted-foreground">{justifications.length} demande(s) en attente</p>
-      </div>
+    <div className="space-y-8 pb-8">
+      {/* Header Banner with Mascot Validation Pose */}
+      <MascotHeader
+        title="Validation des Justifications"
+        description="Examinez et traitez les demandes de régularisation d'absences soumises par les étudiants."
+        pose="validation"
+        mascotMessage={
+          justifications.length > 0
+            ? `${justifications.length} dossier(s) à examiner !`
+            : "Tous les dossiers sont traités !"
+        }
+        badge="Absences & Justificatifs"
+      >
+        <span className="inline-flex items-center gap-2 rounded-2xl border border-[#6d28d9]/10 bg-white px-4 py-2 text-xs font-bold text-[#6d28d9] shadow-xs">
+          <FileText className="h-4 w-4 text-[#f97316]" />
+          <span>En attente : {justifications.length}</span>
+        </span>
+      </MascotHeader>
 
+      {/* Main Content */}
       {justifications.length === 0 ? (
-        <Card className="border-border/50">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <CheckCircle className="h-16 w-16 text-emerald-500/50 mb-4" />
-            <p className="text-lg font-medium text-muted-foreground">Aucune demande en attente</p>
-            <p className="text-sm text-muted-foreground">Les justifications soumises par les étudiants apparaîtront ici.</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          pose="celebration"
+          title="Aucune demande en attente !"
+          hint="Toutes les justifications d'absence des étudiants ont été traitées avec succès."
+        />
       ) : (
-        <div className="space-y-4">
+        <div className="grid gap-4">
           {justifications.map((j) => {
             const key = j.sessionid + j.studentid;
             const isProcessing = processing === key;
+
             return (
-              <Card key={key} className="border-border/50">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4 flex-1 min-w-0">
-                      <Avatar className="h-10 w-10 shrink-0">
-                        <AvatarFallback className="text-xs font-medium bg-amber-500/10 text-amber-600">{j.studentInitials}</AvatarFallback>
+              <Card
+                key={key}
+                className="overflow-hidden border border-[#6d28d9]/10 bg-white shadow-xs rounded-2xl transition-all hover:shadow-md hover:shadow-[#6d28d9]/5"
+              >
+                <CardContent className="p-6">
+                  <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                    {/* Student & Session Info */}
+                    <div className="flex items-start gap-4 min-w-0">
+                      <Avatar className="h-12 w-12 shrink-0 rounded-2xl ring-2 ring-[#6d28d9]/20">
+                        <AvatarFallback className="bg-gradient-to-br from-[#6d28d9] to-[#8b5cf6] text-sm font-bold text-white">
+                          {j.studentInitials}
+                        </AvatarFallback>
                       </Avatar>
-                      <div className="space-y-2 min-w-0">
+
+                      <div className="space-y-2 min-w-0 flex-1">
                         <div>
-                          <p className="font-medium">{j.studentName}</p>
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground mt-1">
-                            <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{j.sessiondate ? new Date(j.sessiondate).toLocaleDateString("fr-FR") : "—"}</span>
-                            <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{j.starttime}</span>
-                            <span className="flex items-center gap-1"><GraduationCap className="h-3 w-3" />{j.moduleName}</span>
-                            <span className="flex items-center gap-1"><AlertTriangle className="h-3 w-3" />Soumis le {j.submittedAt ? new Date(j.submittedAt).toLocaleString("fr-FR") : "—"}</span>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-base font-extrabold text-[#1a1a2e]">
+                              {j.studentName}
+                            </h3>
+                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold">
+                              En attente
+                            </Badge>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-[#64748b] mt-1">
+                            <span className="flex items-center gap-1.5">
+                              <CalendarDays className="h-3.5 w-3.5 text-[#6d28d9]" />
+                              {j.sessiondate
+                                ? new Date(j.sessiondate).toLocaleDateString("fr-FR", {
+                                    weekday: "short",
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  })
+                                : "—"}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <Clock className="h-3.5 w-3.5 text-[#f97316]" />
+                              {j.starttime}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <GraduationCap className="h-3.5 w-3.5 text-[#6d28d9]" />
+                              {j.moduleName}
+                            </span>
                           </div>
                         </div>
-                        <div className="rounded-lg bg-muted/30 p-3 text-sm">
-                          <p className="text-xs text-muted-foreground mb-1 font-medium">Motif :</p>
-                          <p>{j.reason}</p>
+
+                        {/* Reason Box */}
+                        <div className="rounded-xl border border-[#6d28d9]/10 bg-[#f8f9fc] p-3 text-xs text-[#1a1a2e]">
+                          <span className="font-extrabold text-[#6d28d9] uppercase tracking-wider text-[10px] block mb-0.5">
+                            Motif indiqué :
+                          </span>
+                          <p className="leading-relaxed">{j.reason}</p>
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button size="sm" className="h-8 gap-1" disabled={isProcessing} onClick={() => handleApprove(j)}>
-                        {isProcessing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                        Approuver
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-3 shrink-0 self-end lg:self-center">
+                      <Button
+                        size="sm"
+                        disabled={isProcessing}
+                        onClick={() => handleApprove(j)}
+                        className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5 px-4 shadow-sm"
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4" />
+                        )}
+                        <span>Approuver</span>
                       </Button>
-                      <Button size="sm" variant="outline" className="h-8 gap-1 text-destructive" disabled={isProcessing} onClick={() => openReject(j)}>
-                        <XCircle className="h-3.5 w-3.5" />
-                        Refuser
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isProcessing}
+                        onClick={() => openReject(j)}
+                        className="h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 font-semibold gap-1.5 px-4"
+                      >
+                        <XCircle className="h-4 w-4" />
+                        <span>Refuser</span>
                       </Button>
                     </div>
                   </div>
@@ -204,32 +328,53 @@ export default function AdminJustificationsPage() {
         </div>
       )}
 
+      {/* Reject Modal */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent className="sm:max-w-[450px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <XCircle className="h-5 w-5 text-destructive" />
-              Refuser la justification
-            </DialogTitle>
-            <DialogDescription>
-              {rejectTarget && `${rejectTarget.studentName} — ${rejectTarget.moduleName} (${rejectTarget.sessiondate ? new Date(rejectTarget.sessiondate).toLocaleDateString("fr-FR") : "—"})`}
-            </DialogDescription>
+        <DialogContent className="sm:max-w-[480px] rounded-3xl p-6">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center gap-3">
+              <Mascot pose="reflexion" size="sm" />
+              <div>
+                <DialogTitle className="text-lg font-bold text-[#1a1a2e]">
+                  Refuser la demande de justification
+                </DialogTitle>
+                <DialogDescription className="text-xs text-[#64748b]">
+                  {rejectTarget &&
+                    `${rejectTarget.studentName} — ${rejectTarget.moduleName}`}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+
+          <div className="space-y-4 py-3">
             <div className="space-y-2">
-              <Label htmlFor="reject-reason">Motif du refus (optionnel)</Label>
+              <Label htmlFor="reject-reason" className="text-xs font-bold text-[#1a1a2e]">
+                Motif du refus (optionnel)
+              </Label>
               <Textarea
                 id="reject-reason"
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 rows={3}
-                placeholder="Expliquez pourquoi la justification est refusée..."
+                className="rounded-xl border-[#6d28d9]/10 text-xs focus:ring-[#6d28d9]"
+                placeholder="Explication ou pièce justificative manquante..."
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Annuler</Button>
-            <Button variant="destructive" onClick={handleReject} disabled={processing !== null}>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setRejectDialogOpen(false)}
+              className="rounded-xl"
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleReject}
+              disabled={processing !== null}
+              className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white"
+            >
               {processing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmer le refus
             </Button>

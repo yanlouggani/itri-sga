@@ -25,4 +25,16 @@ function requireRole(roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+function requireInternalApiKeyOrAuth(roles = ['ADMIN']) {
+  return (req, res, next) => {
+    const internalKey = req.headers['x-internal-api-key'];
+    if (internalKey && process.env.RECURRING_INTERNAL_API_KEY && internalKey === process.env.RECURRING_INTERNAL_API_KEY) {
+      req.user = { id: 'system', role: 'ADMIN' };
+      return next();
+    }
+
+    return requireAuth(req, res, () => requireRole(roles)(req, res, next));
+  };
+}
+
+module.exports = { requireAuth, requireRole, requireInternalApiKeyOrAuth };

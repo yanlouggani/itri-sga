@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { MascotProvider } from "@/components/mascot/MascotProvider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -34,12 +35,14 @@ export default function RootLayout({
       <body className="min-h-screen bg-background font-sans antialiased" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster richColors position="top-right" />
+          <MascotProvider>
+            {children}
+            <Toaster richColors position="top-right" />
+          </MascotProvider>
         </ThemeProvider>
       </body>
     </html>

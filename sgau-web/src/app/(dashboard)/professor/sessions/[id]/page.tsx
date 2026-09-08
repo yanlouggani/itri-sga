@@ -16,6 +16,8 @@ import {
   AlertTriangle, PlayCircle, Square, ListRestart, Ban,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useMascot } from "@/components/mascot/MascotProvider";
+import { EmptyState, LoadingState } from "@/components/mascot/EmptyState";
 
 type Student = { id: string; name: string; status: string; avatar: string };
 type Session = {
@@ -39,6 +41,7 @@ export default function SessionDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [unauthorized, setUnauthorized] = useState(false);
   const populatedRef = useRef(false);
+  const mascot = useMascot();
 
   const load = useCallback(async () => {
     try {
@@ -70,7 +73,7 @@ export default function SessionDetailPage() {
         await supabase.rpc("populate_session_attendance", { p_session_id: id });
         populatedRef.current = true;
       }
-      let attRows = (await supabase
+      const attRows = (await supabase
         .from("attendance")
         .select("*, students:users!attendance_studentid_fkey(firstname, lastname)")
         .eq("sessionid", id).order("studentid")).data as Record<string, unknown>[] | null;
@@ -116,12 +119,15 @@ export default function SessionDetailPage() {
 
   useEffect(() => {
     let mounted = true;
-    load();
-    const i = setInterval(() => { if (mounted) load(); }, 5000);
+    void (async () => {
+      if (!mounted) return;
+      await load();
+    })();
+    const i = setInterval(() => { if (mounted) void load(); }, 5000);
     return () => { mounted = false; clearInterval(i); };
   }, [load]);
 
-  const markAttendance = async (studentid: string, status: string) => {
+  const markAttendance = async (studentid: string, status: string): Promise<boolean> => {
     const prev = students.find((st) => st.id === studentid)?.status;
     setStudents((prevList) => prevList.map((st) => st.id === studentid ? { ...st, status } : st));
     const { error } = await supabase.from("attendance").upsert({
@@ -131,7 +137,17 @@ export default function SessionDetailPage() {
     if (error) {
       setStudents((prevList) => prevList.map((st) => st.id === studentid ? { ...st, status: prev ?? "unmarked" } : st));
       toast.error("Erreur de marquage", { description: String(error) });
+      return false;
     }
+    return true;
+  };
+
+  const markOne = async (studentid: string, status: string) => {
+    const statusLabels: Record<string, string> = {
+      present: "Présent", late: "En retard", absent: "Absent",
+    };
+    const ok = await markAttendance(studentid, status);
+    if (ok) mascot.show("validation", statusLabels[status] ?? "Marqué", "Présence enregistrée");
   };
 
   const handleBulk = async (status: string) => {
@@ -140,7 +156,11 @@ export default function SessionDetailPage() {
     const results = await Promise.allSettled(targets.map((st) => markAttendance(st.id, status)));
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
     if (succeeded === targets.length) {
-      toast.success(`${targets.length} étudiant(s) marqués ${status === "present" ? "présent" : "absent"}`);
+      if (status === "present" && (present + late + absent + targets.length) === students.length) {
+        mascot.show("celebration", "Tout le monde est présent !", "100% de présence sur cette séance.");
+      } else {
+        mascot.show("validation", `${targets.length} étudiant(s) marqué(s)`, status === "present" ? "Tous présents" : "Tous absents");
+      }
     } else {
       toast.error(`${succeeded}/${targets.length} marqués — erreur sur ${targets.length - succeeded} étudiant(s)`);
     }
@@ -152,7 +172,7 @@ export default function SessionDetailPage() {
     const results = await Promise.allSettled(targets.map((st) => markAttendance(st.id, "unmarked")));
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
     if (succeeded === targets.length) {
-      toast.success("Marquages réinitialisés");
+      mascot.show("validation", "Marquages réinitialisés", "La liste est repartie à zéro.");
     } else {
       toast.error(`${succeeded}/${targets.length} réinitialisés — erreur sur ${targets.length - succeeded} étudiant(s)`);
     }
@@ -163,7 +183,7 @@ export default function SessionDetailPage() {
     try {
       const { data, error } = await supabase.rpc("start_session", { p_session_id: id });
       if (error) throw error;
-      toast.success("Séance démarrée");
+      mascot.show("validation", "Séance démarrée", "Le marquage des présences est maintenant possible.");
       if (data && data !== id) router.replace(`/professor/sessions/${data}`);
       load();
     } catch (err) { toast.error("Erreur", { description: String(err) }); }
@@ -177,16 +197,14 @@ export default function SessionDetailPage() {
     if (!user) { toast.error("Non connecté"); return; }
     const { error } = await supabase.from("sessions").update({ status: "CANCELLED" }).eq("id", id).eq("professorid", user.id);
       if (error) throw error;
-      toast.success("Séance annulée");
+      mascot.show("validation", "Séance annulée", "Le créneau a été retiré du planning.");
       setCancelOpen(false);
       load();
     } catch (err) { toast.error("Erreur", { description: String(err) }); }
     setCancelling(false);
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[50vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
-  );
+  if (loading) return <LoadingState label="Chargement de la séance..." />;
   if (!session) return <p className="text-muted-foreground p-8">Séance introuvable</p>;
 
   const present = students.filter((s) => s.status === "present").length;
@@ -242,7 +260,11 @@ export default function SessionDetailPage() {
               try {
                 const { error } = await supabase.rpc("close_session", { p_session_id: id });
                 if (error) throw error;
-                toast.success("Séance clôturée");
+                if (students.length > 0 && present === students.length) {
+                  mascot.show("celebration", "100% de présence !", "Tous vos étudiants étaient présents.");
+                } else {
+                  mascot.show("validation", "Séance clôturée", "Les présences ont été enregistrées.");
+                }
                 load();
               } catch (err) { toast.error("Erreur", { description: String(err) }); }
             }}>
@@ -289,12 +311,13 @@ export default function SessionDetailPage() {
 
       {isCM ? (
         <Card className="border-border/50">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="rounded-full bg-muted p-4 mb-4">
-              <Users className="h-8 w-8 text-muted-foreground/40" />
-            </div>
-            <p className="text-muted-foreground font-medium">CM — Pas de suivi de présence</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Les présences ne sont pas gérées pour les cours magistraux</p>
+          <CardContent>
+            <EmptyState
+              pose="eureka"
+              title="CM — Pas de suivi de présence"
+              hint="Les présences ne sont pas gérées pour les cours magistraux"
+              compact
+            />
           </CardContent>
         </Card>
       ) : (
@@ -312,12 +335,13 @@ export default function SessionDetailPage() {
           )}
         </div>
         {students.length === 0 ? (
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="rounded-full bg-muted p-4 mb-4">
-              <Users className="h-8 w-8 text-muted-foreground/40" />
-            </div>
-            <p className="text-muted-foreground font-medium">Aucun étudiant inscrit</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Les étudiants seront ajoutés automatiquement</p>
+          <CardContent>
+            <EmptyState
+              pose="reflexion"
+              title="Aucun étudiant inscrit"
+              hint="Les étudiants seront ajoutés automatiquement"
+              compact
+            />
           </CardContent>
         ) : (
           <div className="divide-y divide-border/50">
@@ -338,11 +362,11 @@ export default function SessionDetailPage() {
                   {canMark && (
                     <>
                       <StatusPill label="P" title="Présent" active={st.status === "present"} color="emerald"
-                        onClick={() => markAttendance(st.id, "present")} />
+                        onClick={() => markOne(st.id, "present")} />
                       <StatusPill label="R" title="Retard" active={st.status === "late"} color="amber"
-                        onClick={() => markAttendance(st.id, "late")} />
+                        onClick={() => markOne(st.id, "late")} />
                       <StatusPill label="A" title="Absent" active={st.status === "absent"} color="red"
-                        onClick={() => markAttendance(st.id, "absent")} />
+                        onClick={() => markOne(st.id, "absent")} />
                     </>
                   )}
                   {!canMark && (

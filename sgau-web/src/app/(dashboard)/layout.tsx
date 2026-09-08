@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { MascotProvider } from "@/components/mascot/MascotProvider";
 
 export default async function DashboardLayout({
   children,
@@ -9,16 +10,18 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
 
-  if (!authData.user) {
+  if (!authUser) {
     redirect("/login");
   }
 
   const { data: profile } = await supabase
     .from("users")
     .select("*")
-    .eq("id", authData.user.id)
+    .eq("id", authUser.id)
     .maybeSingle();
 
   if (!profile) {
@@ -34,17 +37,23 @@ export default async function DashboardLayout({
   };
 
   return (
-    <SidebarProvider defaultOpen>
-      <div className="flex h-screen w-full">
-        <AppSidebar user={user} />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <header className="flex h-12 items-center gap-4 border-b border-border/40 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <SidebarTrigger className="-ml-1 size-4" />
-            <div className="flex-1" />
-          </header>
-          <main className="flex-1 overflow-auto p-4">{children}</main>
+    <MascotProvider>
+      <SidebarProvider defaultOpen>
+        <div className="flex h-screen w-full bg-[#f8f9fc]">
+          <AppSidebar user={user} />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <header className="flex h-14 items-center gap-4 border-b border-[#6d28d9]/[0.06] bg-white/80 px-6 backdrop-blur-xl">
+              <SidebarTrigger className="-ml-1 size-4 text-[#6d28d9]" />
+              <div className="flex-1" />
+              <div className="hidden md:flex items-center gap-2 text-xs font-medium text-[#64748b] bg-[#f8f9fc] rounded-xl px-3 py-1.5 border border-[#6d28d9]/5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>ITRI Academy · En ligne</span>
+              </div>
+            </header>
+            <main className="flex-1 overflow-auto p-6 md:p-8">{children}</main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </MascotProvider>
   );
 }

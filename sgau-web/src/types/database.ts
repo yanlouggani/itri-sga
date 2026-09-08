@@ -142,6 +142,8 @@ export type ProfessorGroup = {
 
 export type ProfessorAssignment = ProfessorGroup;
 
+export type WeeklyEntryStatus = "planned" | "confirmed" | "published" | "cancelled" | "moved" | "rescheduled";
+
 export type WeeklyEntry = {
   id: string;
   groupid: string;
@@ -156,6 +158,50 @@ export type WeeklyEntry = {
   groupName?: string;
   moduleName?: string;
   moduleid?: string;
+  status?: WeeklyEntryStatus;
+  replaced_by?: string | null;
+  replaces?: string | null;
+};
+
+export type AuditLogEntry = {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: "create" | "update" | "delete" | "cancel" | "restore" | "publish";
+  user_id: string;
+  user_name?: string;
+  before_data?: Record<string, unknown>;
+  after_data?: Record<string, unknown>;
+  created_at: string;
+};
+
+export type ProfessorAbsence = {
+  id: string;
+  professorid: string;
+  professorName?: string;
+  date_start: string;
+  date_end: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  replacement_professorid?: string | null;
+  replacement_professorName?: string | null;
+};
+
+export type Holiday = {
+  id: string;
+  name: string;
+  date_start: string;
+  date_end: string;
+  type: "holiday" | "vacation" | "bridge" | "event";
+  isactive: boolean;
+};
+
+export type AcademicYear = {
+  id: string;
+  name: string;
+  date_start: string;
+  date_end: string;
+  isactive: boolean;
 };
 
 export type AttendanceRecord = {

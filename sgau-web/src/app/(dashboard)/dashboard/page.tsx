@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import {
   Users,
   GraduationCap,
@@ -10,15 +11,32 @@ import {
   Clock,
   LayoutList,
   Group,
+  Sparkles,
+  TrendingUp,
+  FileText,
+  ShieldAlert,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MascotHeader } from "@/components/mascot/MascotHeader";
+import { MascotStatsCard } from "@/components/mascot/MascotStatsCard";
+import { MascotTipCard } from "@/components/mascot/MascotTipCard";
+import { EmptyState } from "@/components/mascot/EmptyState";
+import { Mascot } from "@/components/mascot/Mascot";
 
 async function getDashboardStats() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
+  const { data: profile } = await supabase
+    .from("users")
+    .select("role, firstname, lastname")
+    .eq("id", user.id)
+    .maybeSingle();
+
   if (profile?.role !== "admin") {
     if (profile?.role === "professor") redirect("/professor/dashboard");
     else redirect("/student/dashboard");
@@ -26,12 +44,13 @@ async function getDashboardStats() {
 
   const [
     { count: totalUsers },
-    { count: totalstudents },
+    { count: totalStudents },
     { count: totalProfessors },
     { count: totalModules },
     { count: totalDomains },
     { count: totalGroups },
     { count: totalRooms },
+    { count: pendingJustifications },
   ] = await Promise.all([
     supabase.from("users").select("*", { count: "exact", head: true }),
     supabase.from("users").select("*", { count: "exact", head: true }).eq("role", "student"),
@@ -40,9 +59,13 @@ async function getDashboardStats() {
     supabase.from("domains").select("*", { count: "exact", head: true }),
     supabase.from("groups").select("*", { count: "exact", head: true }),
     supabase.from("rooms").select("*", { count: "exact", head: true }),
+    supabase.from("justifications").select("*", { count: "exact", head: true }).eq("status", "PENDING"),
   ]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Use local date format instead of UTC ISO slice
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
   const { data: todaySessions } = await supabase
     .from("sessions")
     .select("id, status")
@@ -52,13 +75,15 @@ async function getDashboardStats() {
   const activeSessions = todaySessions?.filter((s) => s.status === "ACTIVE").length ?? 0;
 
   return {
+    adminName: profile?.firstname ? `${profile.firstname} ${profile.lastname}` : "Administrateur",
     totalUsers: totalUsers ?? 0,
-    totalstudents: totalstudents ?? 0,
+    totalStudents: totalStudents ?? 0,
     totalProfessors: totalProfessors ?? 0,
     totalModules: totalModules ?? 0,
-    totalSections: totalDomains ?? 0,
+    totalDomains: totalDomains ?? 0,
     totalGroups: totalGroups ?? 0,
     totalRooms: totalRooms ?? 0,
+    pendingJustifications: pendingJustifications ?? 0,
     totalSessionsToday,
     activeSessionsToday: activeSessions,
   };
@@ -67,124 +92,168 @@ async function getDashboardStats() {
 export default async function AdminDashboardPage() {
   const stats = await getDashboardStats();
 
-  const cards = [
-    {
-      title: "Utilisateurs",
-      value: stats.totalUsers,
-      sub: `${stats.totalstudents} étudiants · ${stats.totalProfessors} professeurs`,
-      icon: Users,
-    },
-    {
-      title: "Modules",
-      value: stats.totalModules,
-      sub: "Matières enseignées",
-      icon: BookOpen,
-    },
-    {
-      title: "Sections",
-      value: stats.totalSections,
-      sub: `${stats.totalGroups} groupe(s)`,
-      icon: LayoutList,
-    },
-    {
-      title: "Séances aujourd'hui",
-      value: stats.totalSessionsToday,
-      sub: `${stats.activeSessionsToday} active(s)`,
-      icon: CalendarCheck,
-    },
-    {
-      title: "Salles",
-      value: stats.totalRooms,
-      sub: "Espaces disponibles",
-      icon: Clock,
-    },
-  ];
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Vue d'ensemble de l'établissement</p>
+    <div className="space-y-8 pb-8">
+      {/* Hero Welcome Header with Mascot */}
+      <MascotHeader
+        title={`Bienvenue, ${stats.adminName} 👋`}
+        description="Voici la vue d&apos;ensemble en temps réel de votre établissement ITRI Academy."
+        pose={stats.totalSessionsToday > 0 ? "celebration" : "bonjour"}
+        mascotMessage={
+          stats.pendingJustifications > 0
+            ? `${stats.pendingJustifications} justification(s) en attente !`
+            : "Tout est sous contrôle aujourd'hui !"
+        }
+        badge="Espace Administration"
+      >
+        <Link
+          href="/admin/justifications"
+          className="inline-flex items-center gap-2 rounded-2xl bg-[#6d28d9] px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-[#6d28d9]/20 transition-all hover:bg-[#5b21b6] hover:shadow-lg"
+        >
+          <FileText className="h-4 w-4" />
+          <span>Voir Justifications</span>
+          {stats.pendingJustifications > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f97316] px-1 text-xs font-bold text-white">
+              {stats.pendingJustifications}
+            </span>
+          )}
+        </Link>
+      </MascotHeader>
+
+      {/* Primary KPI Grid with Mascots */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MascotStatsCard
+          title="Communauté Totale"
+          value={stats.totalUsers}
+          subtitle={`${stats.totalStudents} étudiants · ${stats.totalProfessors} profs`}
+          pose="tous"
+          trend={{ value: "+12%", positive: true }}
+        />
+        <MascotStatsCard
+          title="Formations & Modules"
+          value={stats.totalModules}
+          subtitle={`${stats.totalDomains} domaine(s) d'étude`}
+          pose="eureka"
+          trend={{ value: "+5%", positive: true }}
+        />
+        <MascotStatsCard
+          title="Séances Aujourd'hui"
+          value={stats.totalSessionsToday}
+          subtitle={`${stats.activeSessionsToday} séance(s) en cours`}
+          pose="celebration"
+        />
+        <MascotStatsCard
+          title="Infrastructures"
+          value={stats.totalRooms}
+          subtitle={`${stats.totalGroups} groupe(s) d'étudiants`}
+          pose="reflexion"
+        />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {cards.map((card) => (
-          <Card key={card.title} className="border-border/50 transition-all hover:shadow-md">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {card.title}
-              </CardTitle>
-              <div className="rounded-lg bg-primary/10 p-2 text-primary">
-                <card.icon className="h-5 w-5" />
+      {/* Mascot Assistant Tip Banner */}
+      <MascotTipCard
+        pose="eureka"
+        title="Conseil d'Administration SGA"
+        description="N'oubliez pas de vérifier les demandes de justifications d'absence régulièrement afin de maintenir un suivi précis de l'assiduité."
+        action={
+          <Link
+            href="/admin/justifications"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#6d28d9] hover:underline"
+          >
+            <span>Accéder aux justificatifs</span>
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
+        }
+      />
+
+      {/* Main Content Grid */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Active Sessions Card */}
+        <Card className="border border-[#6d28d9]/10 bg-white shadow-xs rounded-2xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-bold text-[#1a1a2e]">
+              <div className="rounded-xl bg-[#f97316]/10 p-2">
+                <Activity className="h-4 w-4 text-[#f97316]" />
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold tracking-tight">{card.value}</div>
-              <p className="mt-1 text-xs text-muted-foreground">{card.sub}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-primary" />
-              Activité récente
+              Activité des Cours en Direct
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-center py-12">
-              <p className="text-sm text-muted-foreground">
-                {stats.activeSessionsToday > 0
-                  ? `${stats.activeSessionsToday} séance(s) en cours actuellement`
-                  : "Aucune séance en cours"}
-              </p>
-            </div>
+            {stats.activeSessionsToday > 0 ? (
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <Mascot pose="celebration" size="lg" animate={true} />
+                <p className="mt-3 text-lg font-bold text-[#1a1a2e]">
+                  {stats.activeSessionsToday} cours actuellement en cours !
+                </p>
+                <p className="text-xs text-[#64748b] mt-1 max-w-sm">
+                  Les présences sont en cours d&apos;enregistrement par les enseignants.
+                </p>
+              </div>
+            ) : (
+              <EmptyState
+                compact
+                pose="reflexion"
+                title="Aucune séance en cours actuellement"
+                hint="Les cours programmés s'afficheront ici une fois démarrés par les enseignants."
+              />
+            )}
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ArrowUpRight className="h-4 w-4 text-primary" />
-              Répartition
+        {/* Community Distribution */}
+        <Card className="border border-[#6d28d9]/10 bg-white shadow-xs rounded-2xl">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base font-bold text-[#1a1a2e]">
+              <div className="rounded-xl bg-[#6d28d9]/10 p-2">
+                <Users className="h-4 w-4 text-[#6d28d9]" />
+              </div>
+              Répartition des Utilisateurs
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4 py-4">
+            <div className="space-y-6 py-2">
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Étudiants</span>
-                  <span className="font-medium">
-                    {((stats.totalstudents / Math.max(stats.totalUsers, 1)) * 100).toFixed(0)}%
+                  <span className="font-semibold text-[#64748b]">Étudiants</span>
+                  <span className="font-bold text-[#1a1a2e]">
+                    {stats.totalStudents} ({((stats.totalStudents / Math.max(stats.totalUsers, 1)) * 100).toFixed(0)}%)
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-muted">
+                <div className="h-3 rounded-full bg-[#f8f9fc] overflow-hidden p-0.5 border border-[#6d28d9]/5">
                   <div
-                    className="h-full rounded-full bg-primary transition-all"
+                    className="h-full rounded-full bg-gradient-to-r from-[#6d28d9] to-[#8b5cf6] transition-all"
                     style={{
-                      width: `${(stats.totalstudents / Math.max(stats.totalUsers, 1)) * 100}%`,
+                      width: `${(stats.totalStudents / Math.max(stats.totalUsers, 1)) * 100}%`,
                     }}
                   />
                 </div>
               </div>
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Professeurs</span>
-                  <span className="font-medium">
-                    {((stats.totalProfessors / Math.max(stats.totalUsers, 1)) * 100).toFixed(0)}%
+                  <span className="font-semibold text-[#64748b]">Professeurs</span>
+                  <span className="font-bold text-[#1a1a2e]">
+                    {stats.totalProfessors} ({((stats.totalProfessors / Math.max(stats.totalUsers, 1)) * 100).toFixed(0)}%)
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-muted">
+                <div className="h-3 rounded-full bg-[#f8f9fc] overflow-hidden p-0.5 border border-[#6d28d9]/5">
                   <div
-                    className="h-full rounded-full bg-primary/60 transition-all"
+                    className="h-full rounded-full bg-gradient-to-r from-[#f97316] to-[#fb923c] transition-all"
                     style={{
                       width: `${(stats.totalProfessors / Math.max(stats.totalUsers, 1)) * 100}%`,
                     }}
                   />
                 </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#6d28d9]/5 flex items-center justify-between text-xs text-[#64748b]">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <Sparkles className="h-4 w-4 text-[#f59e0b]" />
+                  <span>{stats.totalModules} modules actifs</span>
+                </div>
+                <Link href="/students" className="font-bold text-[#6d28d9] hover:underline">
+                  Gérer la communauté &rarr;
+                </Link>
               </div>
             </div>
           </CardContent>

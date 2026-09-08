@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Search, Plus, MoreHorizontal, Edit, Trash2, BookOpen, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
 
 type Formation = { id: string; name: string; domainId: string; domainName?: string; isActive: boolean };
 type Domain = { id: string; name: string };
@@ -85,70 +86,90 @@ export function ModulesManagement({ initialModules, domains }: { initialModules:
   const filtered = modules.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Formations</h1>
-          <p className="text-muted-foreground">{modules.length} formation(s)</p>
-        </div>
-        <Button onClick={openAdd}><Plus className="mr-2 h-4 w-4" />Ajouter</Button>
-      </div>
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Rechercher par nom..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+    <div className="space-y-8 pb-10">
+      <PageHeader
+        title="Formations"
+        subtitle={`${modules.length} formation(s) référencée(s)`}
+        icon={<BookOpen className="h-5 w-5" />}
+        actions={
+          <Button onClick={openAdd} className="h-11 rounded-2xl bg-gradient-to-r from-[#6d28d9] to-[#8b5cf6] px-5 font-bold text-white shadow-md shadow-[#6d28d9]/20 hover:shadow-lg">
+            <Plus className="mr-2 h-4 w-4" />
+            Ajouter
+          </Button>
+        }
+      />
+      <Card className="overflow-hidden rounded-3xl border border-[#6d28d9]/10 bg-white shadow-xs">
+        <div className="border-b border-[#6d28d9]/5 p-5">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6d28d9]" />
+            <Input placeholder="Rechercher une formation..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-11 rounded-2xl border-[#6d28d9]/15 bg-[#f8f9fc] pl-10 text-xs font-semibold text-[#1a1a2e] focus:border-[#6d28d9] focus:bg-white" />
           </div>
-        </CardHeader>
+        </div>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Formation</TableHead>
-                <TableHead className="hidden sm:table-cell">Domaine</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((mod) => (
-                <TableRow key={mod.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                      <span className="text-sm font-medium">{mod.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell">
-                    {mod.domainName ? (
-                      <Badge variant="secondary" className="text-xs">{mod.domainName}</Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className={`inline-flex items-center gap-1.5 text-xs ${mod.isActive ? "text-emerald-600" : "text-muted-foreground"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${mod.isActive ? "bg-emerald-500" : "bg-muted-foreground"}`} />
-                      {mod.isActive ? "Actif" : "Inactif"}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>} />
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={() => openEdit(mod)}><Edit className="mr-2 h-4 w-4" />Modifier</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(mod)}><Trash2 className="mr-2 h-4 w-4" />Supprimer</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              <BookOpen className="mb-3 h-10 w-10 text-[#6d28d9]/40" />
+              <p className="text-sm font-semibold text-[#1a1a2e]">Aucune formation trouvée</p>
+              <p className="text-sm text-[#64748b]">Essayez d’ajuster vos critères de recherche.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader className="bg-[#f8f9fc]">
+                <TableRow className="border-b border-[#6d28d9]/5 hover:bg-transparent">
+                  <TableHead className="py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9]">Formation</TableHead>
+                  <TableHead className="hidden py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9] sm:table-cell">Domaine</TableHead>
+                  <TableHead className="py-4 text-xs font-extrabold uppercase tracking-wider text-[#6d28d9]">Statut</TableHead>
+                  <TableHead className="w-16 py-4" />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((mod) => (
+                  <TableRow key={mod.id} className="border-b border-[#6d28d9]/5 transition-colors hover:bg-[#f3f0ff]/30">
+                    <TableCell className="py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-xl bg-[#6d28d9]/10 p-2 text-[#6d28d9]">
+                          <BookOpen className="h-4 w-4" />
+                        </div>
+                        <span className="text-sm font-semibold text-[#1a1a2e]">{mod.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden py-4 sm:table-cell">
+                      {mod.domainName ? (
+                        <Badge variant="secondary" className="rounded-full border-[#6d28d9]/10 bg-[#6d28d9]/10 text-[#6d28d9]">{mod.domainName}</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${mod.isActive ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${mod.isActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"}`} />
+                        {mod.isActive ? "Actif" : "Inactif"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-4">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl text-[#64748b] hover:bg-[#6d28d9]/10 hover:text-[#6d28d9]"><MoreHorizontal className="h-4 w-4" /></Button>} />
+                        <DropdownMenuContent align="end" className="w-44 rounded-2xl p-1.5 shadow-xl">
+                          <DropdownMenuItem onClick={() => openEdit(mod)} className="rounded-xl text-xs font-semibold">
+                            <Edit className="mr-2 h-4 w-4 text-[#6d28d9]" />
+                            Modifier
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="rounded-xl text-xs font-semibold text-rose-600 focus:bg-rose-50" onClick={() => handleDelete(mod)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Supprimer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] rounded-3xl p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BookOpen className="h-5 w-5 text-primary" />

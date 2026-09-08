@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Clock, MapPin, GraduationCap, AlertTriangle, CheckCircle } from "lucide-react";
+import { Mascot } from "@/components/mascot/Mascot";
+import { EmptyState } from "@/components/mascot/EmptyState";
 
 export default async function StudentDashboardPage() {
   const supabase = await createClient();
@@ -31,7 +33,7 @@ export default async function StudentDashboardPage() {
   const groupNames = [...new Set(enrollments?.map((e: Record<string, unknown>) => (e.groups as Record<string, unknown>)?.name as string) ?? [])];
 
   let todaySessions: Record<string, unknown>[] = [];
-  let attendanceMap: Record<string, string> = {};
+  const attendanceMap: Record<string, string> = {};
   let totalAbsences = 0;
   let presentToday = 0;
 
@@ -81,11 +83,11 @@ export default async function StudentDashboardPage() {
 
   const statusBadge = (status: string | undefined) => {
     switch (status) {
-      case "present": return <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-200 text-xs">Présent</Badge>;
-      case "absent": return <Badge className="bg-red-500/10 text-red-600 border-red-200 text-xs">Absent</Badge>;
-      case "late": return <Badge className="bg-amber-500/10 text-amber-600 border-amber-200 text-xs">En retard</Badge>;
-      case "justified": return <Badge className="bg-blue-500/10 text-blue-600 border-blue-200 text-xs">Justifié</Badge>;
-      default: return <Badge variant="outline" className="text-xs text-muted-foreground">Non marqué</Badge>;
+      case "present": return <Badge className="bg-emerald-500/10 text-emerald-600 border-none text-xs rounded-full">Présent</Badge>;
+      case "absent": return <Badge className="bg-red-500/10 text-red-600 border-none text-xs rounded-full">Absent</Badge>;
+      case "late": return <Badge className="bg-amber-500/10 text-amber-600 border-none text-xs rounded-full">En retard</Badge>;
+      case "justified": return <Badge className="bg-blue-500/10 text-blue-600 border-none text-xs rounded-full">Justifié</Badge>;
+      default: return <Badge variant="outline" className="text-xs text-[#64748b] rounded-full">Non marqué</Badge>;
     }
   };
 
@@ -102,74 +104,99 @@ export default async function StudentDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight capitalize">{dateStr}</h1>
-        <p className="text-muted-foreground">Bonjour, {profile.firstname}</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[#1a1a2e] capitalize">{dateStr}</h1>
+          <p className="text-sm text-[#64748b]">Bonjour, {profile.firstname}</p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-[#6d28d9]/10 bg-gradient-to-r from-[#6d28d9]/5 via-white to-[#f97316]/5 p-5">
+        <div className="flex flex-wrap items-center gap-4">
+          <Mascot pose={formattedSessions.length > 0 ? (presentToday === formattedSessions.length ? "celebration" : "bonjour") : "bonjour"} size="md" animate={false} />
+          <div>
+            <p className="text-base font-bold text-[#1a1a2e]">
+              {formattedSessions.length === 0
+                ? "Pas de cours aujourd'hui"
+                : presentToday === formattedSessions.length
+                  ? "Parfait, vous êtes au top !"
+                  : `${presentToday} séance(s) marquée(s) présente`}
+            </p>
+            <p className="text-sm text-[#64748b]">
+              {formattedSessions.length === 0
+                ? "Profitez de votre temps libre, ou consultez votre emploi du temps."
+                : presentToday === formattedSessions.length
+                  ? `Présent(e) à toutes vos ${formattedSessions.length} séance(s) du jour.`
+                  : "Continuez comme ça, la mascotte est avec vous."}
+            </p>
+          </div>
+          <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-[#6d28d9]/10 shadow-sm">
+            <Mascot pose="eureka" size="xs" animate={false} />
+            <span className="text-xs text-[#64748b]">Restez assidu(e), ça compte !</span>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-border/50">
+        <Card className="border border-[#6d28d9]/[0.06] bg-white hover:shadow-lg hover:shadow-[#6d28d9]/[0.04] transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Séances aujourd&apos;hui</CardTitle>
-            <CalendarDays className="h-4 w-4 text-primary" />
+            <CardTitle className="text-xs font-medium text-[#64748b]">Séances aujourd&apos;hui</CardTitle>
+            <div className="rounded-xl bg-[#6d28d9]/10 p-2 text-[#6d28d9]"><CalendarDays className="h-4 w-4" /></div>
           </CardHeader>
-          <CardContent><p className="text-3xl font-bold">{formattedSessions.length}</p></CardContent>
+          <CardContent><p className="text-3xl font-bold text-[#1a1a2e]">{formattedSessions.length}</p></CardContent>
         </Card>
-        <Card className="border-border/50">
+        <Card className="border border-[#6d28d9]/[0.06] bg-white hover:shadow-lg hover:shadow-[#6d28d9]/[0.04] transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Présent</CardTitle>
-            <CheckCircle className="h-4 w-4 text-emerald-500" />
+            <CardTitle className="text-xs font-medium text-[#64748b]">Présent</CardTitle>
+            <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600"><CheckCircle className="h-4 w-4" /></div>
           </CardHeader>
           <CardContent><p className="text-3xl font-bold text-emerald-600">{presentToday}</p></CardContent>
         </Card>
-        <Card className="border-border/50">
+        <Card className="border border-[#6d28d9]/[0.06] bg-white hover:shadow-lg hover:shadow-[#6d28d9]/[0.04] transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Absences</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <CardTitle className="text-xs font-medium text-[#64748b]">Absences</CardTitle>
+            <div className="rounded-xl bg-red-500/10 p-2 text-red-600"><AlertTriangle className="h-4 w-4" /></div>
           </CardHeader>
           <CardContent><p className="text-3xl font-bold text-red-600">{totalAbsences}</p></CardContent>
         </Card>
-        <Card className="border-border/50">
+        <Card className="border border-[#6d28d9]/[0.06] bg-white hover:shadow-lg hover:shadow-[#6d28d9]/[0.04] transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Groupe</CardTitle>
-            <GraduationCap className="h-4 w-4 text-primary" />
+            <CardTitle className="text-xs font-medium text-[#64748b]">Groupe</CardTitle>
+            <div className="rounded-xl bg-[#f59e0b]/10 p-2 text-[#f59e0b]"><GraduationCap className="h-4 w-4" /></div>
           </CardHeader>
           <CardContent>
-            <p className="text-lg font-bold truncate">{groupNames.join(", ") || "Non assigné"}</p>
+            <p className="text-lg font-bold text-[#1a1a2e] truncate">{groupNames.join(", ") || "Non assigné"}</p>
           </CardContent>
         </Card>
       </div>
 
       {groupids.length === 0 ? (
-        <Card className="border-border/50">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <AlertTriangle className="h-16 w-16 text-amber-500/30 mb-4" />
-            <p className="text-lg font-medium text-muted-foreground">Aucun groupe assigné</p>
-            <p className="text-sm text-muted-foreground">Contactez votre administration pour être rattaché à un groupe.</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          pose="reflexion"
+          title="Aucun groupe assigné"
+          hint="Contactez votre administration pour être rattaché à un groupe."
+        />
       ) : formattedSessions.length === 0 ? (
-        <Card className="border-border/50">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <CalendarDays className="h-16 w-16 text-muted-foreground/30 mb-4" />
-            <p className="text-lg font-medium text-muted-foreground">Aucune séance aujourd&apos;hui</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          pose="bonjour"
+          title="Aucune séance aujourd'hui"
+          hint="Profitez de votre temps libre !"
+        />
       ) : (
         <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Séances du jour</h2>
+          <h2 className="text-lg font-semibold text-[#1a1a2e]">Séances du jour</h2>
           {formattedSessions.map((session) => (
-            <Card key={session.id} className="border-border/50 overflow-hidden">
-              <div className="h-1 bg-primary" />
+            <Card key={session.id} className="border border-[#6d28d9]/[0.06] bg-white overflow-hidden hover:shadow-md hover:shadow-[#6d28d9]/[0.04] transition-all">
+              <div className="h-1 bg-gradient-to-r from-[#f97316] to-[#6d28d9]" />
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <GraduationCap className="h-4 w-4 text-primary" />
-                      <h3 className="font-semibold">{session.moduleName}</h3>
-                      <Badge variant="outline" className="text-[10px]">{session.sessiontype}</Badge>
+                      <GraduationCap className="h-4 w-4 text-[#6d28d9]" />
+                      <h3 className="font-semibold text-[#1a1a2e]">{session.moduleName}</h3>
+                      <Badge variant="outline" className="text-[10px] rounded-full bg-[#6d28d9]/5 border-[#6d28d9]/10 text-[#6d28d9]">{session.sessiontype}</Badge>
                     </div>
-                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                    <div className="flex flex-wrap gap-4 text-sm text-[#64748b]">
                       <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{session.starttime} — {session.endtime}</span>
                       <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" />{session.roomName}</span>
                     </div>
@@ -184,7 +211,16 @@ export default async function StudentDashboardPage() {
         </div>
       )}
 
-
+      {formattedSessions.length > 0 && (
+        <div className="flex items-center justify-center gap-2 p-4 rounded-2xl bg-white border border-[#6d28d9]/10">
+          <Mascot pose={presentToday === formattedSessions.length ? "celebration" : "bonjour"} size="sm" animate={false} />
+          <span className="text-sm text-[#64748b]">
+            {presentToday === formattedSessions.length && formattedSessions.length > 0
+              ? <span className="font-semibold text-emerald-600">Parfait ! Vous êtes présent(e) à toutes vos séances aujourd&apos;hui.</span>
+              : `Vous êtes présent(e) à ${presentToday} séance(s) aujourd'hui`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

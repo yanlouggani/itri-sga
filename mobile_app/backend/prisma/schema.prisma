@@ -29,6 +29,16 @@ enum AttendanceStatus {
   JUSTIFIED
 }
 
+enum SessionMasterStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum SessionExceptionType {
+  DELETED
+  MODIFIED
+}
+
 enum MarkedBy {
   PROFESSOR
   STUDENT
@@ -59,6 +69,7 @@ model User {
 
   group             Group?        @relation(fields: [groupId], references: [id])
   sessionsAsProfessor Session[]   @relation("ProfessorSessions")
+  sessionMasters    SessionMaster[]
   attendance        Attendance[]
   refreshTokens     RefreshToken[]
 
@@ -78,6 +89,7 @@ model Group {
 
   students User[]
   sessions Session[]
+  sessionMasters SessionMaster[]
 }
 
 model Module {
@@ -92,6 +104,7 @@ model Module {
   updatedAt  DateTime @updatedAt
 
   sessions Session[]
+  sessionMasters SessionMaster[]
 }
 
 model Room {
@@ -111,6 +124,7 @@ model Room {
   updatedAt      DateTime @updatedAt
 
   sessions Session[]
+  sessionMasters SessionMaster[]
 }
 
 model Session {
@@ -173,4 +187,64 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+model SessionMaster {
+  id                 String              @id @default(cuid())
+  seriesKey          String
+  parentMasterId     String?
+  moduleId           String
+  professorId        String
+  groupId            String
+  roomId             String
+  weekday            Int
+  startTime          String
+  endTime            String
+  effectiveStartDate DateTime
+  effectiveEndDate   DateTime?
+  status             SessionMasterStatus @default(ACTIVE)
+  archivedAt         DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  parentMaster       SessionMaster?      @relation("SessionMasterLineage", fields: [parentMasterId], references: [id])
+  childMasters       SessionMaster[]     @relation("SessionMasterLineage")
+  module             Module              @relation(fields: [moduleId], references: [id])
+  professor          User                @relation(fields: [professorId], references: [id])
+  group              Group               @relation(fields: [groupId], references: [id])
+  room               Room                @relation(fields: [roomId], references: [id])
+  exceptions         SessionException[]
+
+  @@index([seriesKey])
+  @@index([moduleId])
+  @@index([professorId])
+  @@index([groupId])
+  @@index([roomId])
+  @@index([weekday, effectiveStartDate, effectiveEndDate])
+}
+
+model SessionException {
+  id                  String              @id @default(cuid())
+  masterId            String
+  occurrenceDate      DateTime
+  type                SessionExceptionType
+  originalDate        DateTime
+  originalStartTime   String
+  originalEndTime     String
+  overrideDate        DateTime?
+  overrideStartTime   String?
+  overrideEndTime     String?
+  overrideModuleId    String?
+  overrideProfessorId String?
+  overrideGroupId     String?
+  overrideRoomId      String?
+  note                String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  master SessionMaster @relation(fields: [masterId], references: [id])
+
+  @@unique([masterId, occurrenceDate])
+  @@index([occurrenceDate])
+  @@index([type])
 }

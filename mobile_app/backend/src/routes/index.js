@@ -9,6 +9,7 @@ const sessionsRoutes = require('./sessions');
 const attendanceRoutes = require('./attendance');
 const analyticsRoutes = require('./analytics');
 const dashboardsRoutes = require('./dashboards');
+const recurringSessionsRoutes = require('./recurring-sessions');
 
 const router = express.Router();
 
@@ -22,5 +23,6 @@ router.use(sessionsRoutes);
 router.use(attendanceRoutes);
 router.use(analyticsRoutes);
 router.use(dashboardsRoutes);
+router.use(recurringSessionsRoutes);
 
 module.exports = router;
